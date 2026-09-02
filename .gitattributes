@@ -1,0 +1,3 @@
+# Buf's ES generator emits a terminal blank line. Preserve byte-for-byte
+# generated output while keeping `git diff --check` useful everywhere else.
+apps/web/gen/dns/v1/dns_pb.ts whitespace=-blank-at-eof

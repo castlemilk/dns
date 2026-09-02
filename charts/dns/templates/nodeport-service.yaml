@@ -1,0 +1,29 @@
+{{- if .Values.nodePortService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authoritative-nodeport") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authoritative-dns") | nindent 4 }}
+  {{- with .Values.nodePortService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: NodePort
+  externalTrafficPolicy: {{ .Values.nodePortService.externalTrafficPolicy }}
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: dns-udp
+      protocol: UDP
+      nodePort: {{ .Values.nodePortService.nodePort }}
+    - name: dns-tcp
+      port: 53
+      targetPort: dns-tcp
+      protocol: TCP
+      nodePort: {{ .Values.nodePortService.nodePort }}
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 4 }}
+{{- end }}

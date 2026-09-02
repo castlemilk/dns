@@ -1,0 +1,331 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  protobuf:
+    name: Protobuf lint and generated-code drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 1.27.0
+          cache: true
+
+      - name: Install Buf
+        run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
+
+      - name: Lint protobuf APIs
+        run: buf lint
+
+      - name: Regenerate protobuf bindings
+        run: buf generate
+
+      - name: Check generated bindings are current
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- gen/go apps/web/gen
+          generated_status="$(git status --porcelain --untracked-files=all -- gen/go apps/web/gen)"
+          if [[ -n "${generated_status}" ]]; then
+            printf '%s\n' "${generated_status}"
+            printf 'generated protobuf bindings are not current\n' >&2
+            exit 1
+          fi
+
+  go:
+    name: Go race tests, vet, and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 1.27.0
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(git ls-files '*.go' | xargs gofmt -l)"
+          if [[ -n "${unformatted}" ]]; then
+            printf '%s\n' "${unformatted}"
+            printf 'Go files are not formatted\n' >&2
+            exit 1
+          fi
+
+      - name: Run race tests
+        run: go test -race ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+
+      - name: Lint Go
+        run: golangci-lint run ./...
+
+      - name: Install Gitleaks
+        run: go install github.com/gitleaks/gitleaks/v8@v8.30.1
+
+      - name: Scan the checked-out revision for secrets
+        run: gitleaks git --redact --no-banner --no-color .
+
+      - name: Build server
+        run: go build -buildvcs=false -trimpath ./...
+
+      - name: Verify runtime Go module licenses
+        run: >-
+          go run ./tools/collect-go-licenses
+          -out "${RUNNER_TEMP}/dns-licenses"
+          -project-license ./LICENSE
+          -target ./cmd/dns
+
+  infrastructure:
+    name: OpenTofu and bootstrap validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.12.6
+          tofu_wrapper: false
+
+      - name: Check OpenTofu formatting
+        run: tofu fmt -check -recursive
+        working-directory: infra/vultr
+
+      - name: Initialize provider plugins without a backend
+        run: tofu init -backend=false -lockfile=readonly
+        working-directory: infra/vultr
+
+      - name: Validate infrastructure
+        run: tofu validate
+        working-directory: infra/vultr
+
+      - name: Validate authority bootstrap helper
+        run: |
+          bash -n bootstrap-authority.sh
+          shellcheck bootstrap-authority.sh
+        working-directory: infra/vultr
+
+  web:
+    name: Web lint and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.19.0
+
+      - name: Install pnpm
+        run: npm install --global pnpm@11.23.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/web
+
+      - name: Lint
+        run: pnpm lint
+        working-directory: apps/web
+
+      - name: Build
+        run: pnpm build
+        working-directory: apps/web
+
+      - name: Verify standalone runtime licenses
+        run: pnpm licenses:standalone
+        working-directory: apps/web
+
+  chart:
+    name: Helm chart lint and render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Test operational shell helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/attach-gateway-certificate.sh
+          bash -n scripts/backup-snapshot.sh
+          bash -n scripts/probe-authorities.sh
+          bash -n infra/vultr/bootstrap-authority.sh
+          bash -n scripts/tests/attach-gateway-certificate-test.sh
+          bash -n scripts/tests/backup-snapshot-test.sh
+          bash -n scripts/tests/probe-authorities-test.sh
+          bash -n scripts/tests/fake-curl.sh
+          bash -n scripts/tests/fake-dig.sh
+          bash -n scripts/tests/fake-dns-restore.sh
+          bash -n scripts/tests/fake-kubectl.sh
+          scripts/tests/attach-gateway-certificate-test.sh
+          scripts/tests/backup-snapshot-test.sh
+          scripts/tests/probe-authorities-test.sh
+
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Lint chart
+        run: |
+          helm lint --strict charts/dns
+          helm lint --strict charts/dns -f charts/dns/ci/production-values.yaml
+
+      - name: Render default chart
+        run: helm template dns charts/dns --namespace dns
+
+      - name: Render allowed custom server environment
+        run: >-
+          helm template dns charts/dns --namespace dns
+          -f charts/dns/ci/allowed-custom-extra-env.yaml
+
+      - name: Render production split topology and NodePort DNS path
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="$(helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml)"
+          grep -Fq 'helm.sh/resource-policy: keep' <<<"${rendered}"
+          grep -Fq 'paprika.io/prune: "false"' <<<"${rendered}"
+          grep -Fq 'whenDeleted: Retain' <<<"${rendered}"
+          grep -Fq 'whenScaled: Retain' <<<"${rendered}"
+
+      - name: Render experimental shared LoadBalancer path
+        run: >-
+          helm template dns charts/dns --namespace dns
+          -f charts/dns/ci/production-values.yaml
+          --set nodePortService.enabled=false
+          --set dnsService.enabled=true
+          --set dnsService.acknowledgeVultrSharedHealthCheckRisk=true
+
+      - name: Render bearer-protected UI and Connect route
+        run: >-
+          helm template dns charts/dns --namespace dns
+          -f charts/dns/ci/production-values.yaml
+          --set httpRoute.enabled=true
+          --set httpRoute.acknowledgePublicControlPlane=true
+          --set 'httpRoute.hostnames[0]=dns.example.com'
+
+      - name: Render remote snapshot route, certificate, and ReferenceGrant
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="$(helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set snapshotRoute.enabled=true \
+            --set snapshotRoute.acknowledgePublicSnapshotFeed=true \
+            --set snapshotRoute.hostname=snapshot.dns.example.com \
+            --set tls.enabled=true \
+            --set 'tls.dnsNames[0]=snapshot.dns.example.com')"
+          grep -Fq 'type: Exact' <<<"${rendered}"
+          grep -Fq 'value: /internal/v1/snapshot' <<<"${rendered}"
+
+      - name: Assert production safety guards fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          assert_fails() {
+            if "$@" >/dev/null 2>&1; then
+              printf 'expected command to fail: %q ' "$@" >&2
+              printf '\n' >&2
+              return 1
+            fi
+          }
+
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set auth.existingSecret=REPLACE_WITH_SECRET
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set 'control.nameservers[0]=ns1.example.com' \
+            --set 'control.nameservers[1]=ns2.example.com'
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set httpRoute.enabled=true \
+            --set 'httpRoute.hostnames[0]=dns.example.com'
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set dnsService.enabled=true \
+            --set dnsService.acknowledgeVultrSharedHealthCheckRisk=true
+          assert_fails helm template dns charts/dns --namespace dns \
+            --set control.replicaCount=2
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set-string images.server.digest=sha256:REPLACE
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/production-values.yaml \
+            --set snapshotRoute.enabled=true \
+            --set snapshotRoute.hostname=snapshot.dns.example.com
+          assert_fails helm template dns charts/dns --namespace dns \
+            --set 'authority.snapshot.url=https://snapshot.example.com/internal/v1/snapshot?query=forbidden'
+          assert_fails helm template dns charts/dns --namespace dns \
+            --set control.httpMaxBodyBytes=67108865
+          assert_fails helm template dns charts/dns --namespace dns \
+            --set authority.snapshot.maxBodyBytes=1073741825
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/rejected-control-extra-env.yaml
+          assert_fails helm template dns charts/dns --namespace dns \
+            -f charts/dns/ci/rejected-authority-extra-env.yaml
+
+          # The template guard remains authoritative even if a caller opts out
+          # of values-schema validation.
+          assert_fails helm template dns charts/dns --namespace dns \
+            --skip-schema-validation \
+            -f charts/dns/ci/rejected-control-extra-env.yaml
+          assert_fails helm template dns charts/dns --namespace dns \
+            --skip-schema-validation \
+            -f charts/dns/ci/rejected-authority-extra-env.yaml

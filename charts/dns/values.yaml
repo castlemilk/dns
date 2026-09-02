@@ -1,0 +1,316 @@
+# Shared metadata and immutable image references.
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+imagePullSecrets: []
+revisionHistoryLimit: 3
+production: false
+
+images:
+  server:
+    repository: ghcr.io/castlemilk/dns
+    tag: latest
+    digest: ""
+    pullPolicy: IfNotPresent
+  web:
+    repository: ghcr.io/castlemilk/dns-web
+    tag: latest
+    digest: ""
+    pullPolicy: IfNotPresent
+
+# The chart never creates this Secret. Both keys must contain independently
+# generated bearer tokens. Control reads both; authorities read only the
+# snapshot token.
+auth:
+  existingSecret: dns-auth
+  apiBearerTokenKey: api-bearer-token
+  snapshotBearerTokenKey: snapshot-bearer-token
+
+# Single-writer control plane: Connect API, bbolt state, and the authenticated
+# internal snapshot feed. The chart rejects more than one replica.
+control:
+  replicaCount: 1
+  nameservers:
+    - ns1.example.net
+    - ns2.example.net
+  # Custom non-DNS_* variables only. The chart owns every DNS_* runtime
+  # setting and rejects attempts to shadow one here.
+  extraEnv: []
+  extraEnvFrom: []
+  service:
+    annotations: {}
+    port: 8080
+  persistence:
+    enabled: true
+    existingClaim: ""
+    annotations: {}
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClass: ""
+  httpMaxBodyBytes: 1048576
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    failureThreshold: 30
+    periodSeconds: 2
+    timeoutSeconds: 1
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    failureThreshold: 3
+    periodSeconds: 20
+    timeoutSeconds: 2
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 2
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  terminationGracePeriodSeconds: 30
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# Independently scalable, read-only authoritative data plane. Each pod polls an
+# authenticated snapshot and keeps a checksum-validated on-disk cache.
+authority:
+  replicaCount: 3
+  # Custom non-DNS_* variables only. The chart owns every DNS_* runtime
+  # setting and rejects attempts to shadow one here.
+  extraEnv: []
+  extraEnvFrom: []
+  snapshot:
+    url: ""
+    pollInterval: 5s
+    maxStaleness: 1m
+    httpTimeout: 5s
+    # Aggregate encoded snapshot admission and download limit. The same value
+    # is injected into control, so oversized mutations fail atomically before
+    # authorities can observe them.
+    maxBodyBytes: 8388608
+    cachePath: /cache/snapshot.json
+  healthService:
+    annotations: {}
+    port: 8080
+  headlessService:
+    annotations: {}
+  cache:
+    persistence:
+      enabled: true
+      annotations: {}
+      accessModes:
+        - ReadWriteOnce
+      size: 1Gi
+      storageClass: ""
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  podAntiAffinity:
+    required: true
+    topologyKey: kubernetes.io/hostname
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    failureThreshold: 60
+    periodSeconds: 2
+    timeoutSeconds: 1
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    failureThreshold: 3
+    periodSeconds: 20
+    timeoutSeconds: 2
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    failureThreshold: 3
+    periodSeconds: 5
+    timeoutSeconds: 2
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  terminationGracePeriodSeconds: 30
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+web:
+  replicaCount: 1
+  extraEnv: []
+  extraEnvFrom: []
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  service:
+    annotations: {}
+    port: 3000
+  startupProbe:
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 30
+    periodSeconds: 2
+    timeoutSeconds: 1
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 3
+    periodSeconds: 20
+    timeoutSeconds: 2
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 2
+  terminationGracePeriodSeconds: 15
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# Preferred backend for a CCM-unmanaged Vultr Load Balancer.
+nodePortService:
+  enabled: false
+  annotations: {}
+  nodePort: 30053
+  externalTrafficPolicy: Cluster
+
+# Experimental shared Vultr CCM endpoint.
+dnsService:
+  enabled: false
+  acknowledgeVultrSharedHealthCheckRisk: false
+  sharedLoadBalancerLabel: ""
+  udp:
+    annotations: {}
+    loadBalancerClass: ""
+    loadBalancerIP: ""
+    externalTrafficPolicy: Cluster
+    loadBalancerSourceRanges: []
+  tcp:
+    annotations: {}
+    loadBalancerClass: ""
+    loadBalancerIP: ""
+    externalTrafficPolicy: Cluster
+    loadBalancerSourceRanges: []
+
+# Browser Connect calls use the control Service and therefore still require the
+# control bearer token. The snapshot endpoint is deliberately not routed.
+# No NetworkPolicy is rendered: live Paprika health checks originate in
+# paprika-e2e, Gateway traffic originates in envoy-gateway-system, and the
+# provider LB backend source is not declared by this chart. Add deny-by-default
+# policies only after those exact selectors/CIDRs are known and canaried.
+httpRoute:
+  enabled: false
+  acknowledgePublicControlPlane: false
+  annotations: {}
+  parentRef:
+    name: paprika
+    namespace: envoy-gateway-system
+    sectionName: https
+  hostnames: []
+  apiPathPrefix: /dns.v1.DNSService
+
+# Optional narrow route for remote authority fleets. It exposes only the fixed
+# authenticated snapshot endpoint, never the Connect API or UI.
+snapshotRoute:
+  enabled: false
+  acknowledgePublicSnapshotFeed: false
+  annotations: {}
+  parentRef:
+    name: paprika
+    namespace: envoy-gateway-system
+    sectionName: https
+  hostname: ""
+
+# Optional certificate and cross-namespace grant. The shared Gateway must still
+# be updated by its platform owner to reference tls.secretName; this chart does
+# not mutate the Gateway.
+tls:
+  enabled: false
+  clusterIssuer: letsencrypt-prod-dns
+  secretName: dns-tls
+  dnsNames: []
+  referenceGrant:
+    enabled: true
+    gatewayNamespace: envoy-gateway-system

@@ -1,0 +1,159 @@
+{{- $baseAffinity := dict -}}
+{{- if .Values.authority.podAntiAffinity.required -}}
+{{- $term := dict "labelSelector" (dict "matchLabels" (include "dns.selectorLabels" (dict "root" . "component" "authority") | fromYaml)) "topologyKey" .Values.authority.podAntiAffinity.topologyKey -}}
+{{- $_ := set $baseAffinity "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (list $term)) -}}
+{{- end -}}
+{{- $affinity := mergeOverwrite (dict) .Values.authority.affinity $baseAffinity -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authority") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authority") | nindent 4 }}
+spec:
+  serviceName: {{ include "dns.resourceName" (dict "root" . "suffix" "authority-headless") }}
+  replicas: {{ .Values.authority.replicaCount }}
+  podManagementPolicy: Parallel
+  minReadySeconds: 5
+  updateStrategy:
+    type: RollingUpdate
+  {{- if .Values.authority.cache.persistence.enabled }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.authority.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- with .Values.authority.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- include "dns.labels" (dict "root" . "component" "authority") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.authority.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.authority.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.authority.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.authority.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.authority.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.authority.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.authority.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 14 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.authority.terminationGracePeriodSeconds }}
+      containers:
+        - name: authority
+          image: {{ include "dns.image" .Values.images.server | quote }}
+          imagePullPolicy: {{ .Values.images.server.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.authority.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: dns-udp
+              containerPort: 1053
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 1053
+              protocol: TCP
+          startupProbe:
+            {{- toYaml .Values.authority.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.authority.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.authority.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.authority.resources | nindent 12 }}
+          env:
+            - name: DNS_ROLE
+              value: "authority"
+            - name: DNS_PRODUCTION
+              value: {{ ternary "true" "false" .Values.production | quote }}
+            - name: DNS_HTTP_ADDR
+              value: ":8080"
+            - name: DNS_LISTEN_ADDR
+              value: ":1053"
+            - name: DNS_SNAPSHOT_URL
+              value: {{ include "dns.snapshotURL" . | quote }}
+            - name: DNS_SNAPSHOT_POLL_INTERVAL
+              value: {{ .Values.authority.snapshot.pollInterval | quote }}
+            - name: DNS_SNAPSHOT_MAX_STALENESS
+              value: {{ .Values.authority.snapshot.maxStaleness | quote }}
+            - name: DNS_SNAPSHOT_HTTP_TIMEOUT
+              value: {{ .Values.authority.snapshot.httpTimeout | quote }}
+            - name: DNS_SNAPSHOT_CACHE_PATH
+              value: {{ .Values.authority.snapshot.cachePath | quote }}
+            - name: DNS_SNAPSHOT_MAX_BODY_BYTES
+              value: {{ printf "%d" (int64 .Values.authority.snapshot.maxBodyBytes) | quote }}
+            - name: DNS_SNAPSHOT_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.snapshotBearerTokenKey }}
+            {{- with .Values.authority.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.authority.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if not .Values.authority.cache.persistence.enabled }}
+        - name: cache
+          emptyDir: {}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+  {{- if .Values.authority.cache.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: cache
+        labels:
+          {{- include "dns.labels" (dict "root" . "component" "authority-cache") | nindent 10 }}
+        {{- with .Values.authority.cache.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.authority.cache.persistence.accessModes | nindent 10 }}
+        {{- with .Values.authority.cache.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.authority.cache.persistence.size }}
+  {{- end }}

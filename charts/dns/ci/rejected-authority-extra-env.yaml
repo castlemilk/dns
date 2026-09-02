@@ -1,0 +1,4 @@
+authority:
+  extraEnv:
+    - name: DNS_SNAPSHOT_MAX_STALENESS
+      value: 8760h

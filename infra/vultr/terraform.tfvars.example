@@ -1,0 +1,15 @@
+cloudflare_zone_id       = "REPLACE_ME"
+primary_nameserver       = "ns1.dns.example.com"
+secondary_nameserver     = "ns2.dns.example.com"
+primary_authority_ipv4   = "192.0.2.53"
+primary_authority_ipv6   = null
+control_hostname         = "dns.example.com"
+snapshot_hostname        = "snapshot.dns.example.com"
+snapshot_gateway_ipv4    = "192.0.2.80"
+canary_zone              = "canary.example.com"
+enable_canary_delegation = false
+secondary_ssh_key_ids    = ["REPLACE_ME"]
+operator_ipv4_cidr       = "192.0.2.1/32"
+server_image             = "ghcr.io/castlemilk/dns@sha256:REPLACE_WITH_64_HEX_CHARACTERS"
+enable_enhanced_ddos_protection = false
+publish_secondary_ipv6            = false

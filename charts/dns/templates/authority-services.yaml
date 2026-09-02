@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authority-headless") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authority") | nindent 4 }}
+  {{- with .Values.authority.headlessService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  ports:
+    - name: http
+      port: {{ .Values.authority.healthService.port }}
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authority-health") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authority-health") | nindent 4 }}
+  {{- with .Values.authority.healthService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.authority.healthService.port }}
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 4 }}

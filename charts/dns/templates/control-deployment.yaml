@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "control") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "control") | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "control") | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.control.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- with .Values.control.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- include "dns.labels" (dict "root" . "component" "control") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.control.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.control.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.control.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.control.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.control.terminationGracePeriodSeconds }}
+      containers:
+        - name: control
+          image: {{ include "dns.image" .Values.images.server | quote }}
+          imagePullPolicy: {{ .Values.images.server.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.control.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            {{- toYaml .Values.control.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.control.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.control.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.control.resources | nindent 12 }}
+          env:
+            - name: DNS_ROLE
+              value: "control"
+            - name: DNS_PRODUCTION
+              value: {{ ternary "true" "false" .Values.production | quote }}
+            - name: DNS_HTTP_ADDR
+              value: ":8080"
+            - name: DNS_DATA_PATH
+              value: "/data/dns.db"
+            - name: DNS_NAMESERVERS
+              value: {{ join "," .Values.control.nameservers | quote }}
+            - name: DNS_HTTP_MAX_BODY_BYTES
+              value: {{ printf "%d" (int64 .Values.control.httpMaxBodyBytes) | quote }}
+            - name: DNS_SNAPSHOT_MAX_BODY_BYTES
+              value: {{ printf "%d" (int64 .Values.authority.snapshot.maxBodyBytes) | quote }}
+            - name: DNS_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.apiBearerTokenKey }}
+            - name: DNS_SNAPSHOT_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.snapshotBearerTokenKey }}
+            {{- with .Values.control.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.control.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if .Values.control.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dns.controlClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}

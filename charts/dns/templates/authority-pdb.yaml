@@ -1,0 +1,14 @@
+{{- if .Values.authority.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authority") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authority") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.authority.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 6 }}
+{{- end }}

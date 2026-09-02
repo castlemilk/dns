@@ -1,0 +1,63 @@
+DNS has been rendered in namespace {{ .Release.Namespace }}.
+
+Topology:
+  control:   Deployment/{{ include "dns.resourceName" (dict "root" . "suffix" "control") }} (1 bbolt writer)
+  authority: StatefulSet/{{ include "dns.resourceName" (dict "root" . "suffix" "authority") }} ({{ .Values.authority.replicaCount }} read-only DNS pods)
+  web:       Deployment/{{ include "dns.resourceName" (dict "root" . "suffix" "web") }}
+
+Images:
+  server: {{ include "dns.image" .Values.images.server }}
+  web:    {{ include "dns.image" .Values.images.web }}
+
+The chart does not create Secret/{{ .Values.auth.existingSecret }}. It must
+already contain independent {{ .Values.auth.apiBearerTokenKey }} and
+{{ .Values.auth.snapshotBearerTokenKey }} values. Restart the control Deployment
+and authority StatefulSet after rotating either token.
+
+Control health:
+  http://{{ include "dns.resourceName" (dict "root" . "suffix" "control") }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.control.service.port }}/readyz
+Authority health:
+  http://{{ include "dns.resourceName" (dict "root" . "suffix" "authority-health") }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.authority.healthService.port }}/readyz
+
+{{- if .Values.nodePortService.enabled }}
+Authoritative DNS is exposed through the authority-only mixed-protocol Service
+on NodePort {{ .Values.nodePortService.nodePort }}. Configure the separately
+managed Vultr load balancer with UDP/53 -> UDP/{{ .Values.nodePortService.nodePort }},
+TCP/53 -> TCP/{{ .Values.nodePortService.nodePort }}, and TCP health checks on
+{{ .Values.nodePortService.nodePort }}. Reconcile core-worker membership after
+every VKE scale or replacement event and test both transports externally.
+{{- else if .Values.dnsService.enabled }}
+The experimental shared-CCM DNS Services are enabled. Confirm both Services
+resolve to one address and continuously canary UDP/53 and TCP/53; the two
+Services still contend for one Vultr load-balancer health check.
+{{- else }}
+Public DNS exposure is disabled.
+{{- end }}
+
+{{- if .Values.httpRoute.enabled }}
+The UI route sends {{ .Values.httpRoute.apiPathPrefix }} to the bearer-protected
+control API and / to the web UI. It does not expose the snapshot endpoint.
+{{- else }}
+The UI/control HTTPRoute is disabled.
+{{- end }}
+
+{{- if .Values.snapshotRoute.enabled }}
+The separate snapshot route exposes only the exact /internal/v1/snapshot path at
+https://{{ .Values.snapshotRoute.hostname }}. Remote authorities must send the
+snapshot bearer token.
+{{- else }}
+The remote snapshot HTTPRoute is disabled; in-cluster authorities poll the
+ClusterIP control Service directly.
+{{- end }}
+
+{{- if .Values.tls.enabled }}
+Certificate/{{ include "dns.resourceName" (dict "root" . "suffix" "tls") }}
+writes Secret/{{ .Values.tls.secretName }} and the chart grants the shared
+Gateway namespace permission to read it. A platform owner must still add that
+Secret as a certificateRef on the shared Gateway; this chart never mutates it.
+{{- end }}
+
+The control claim is protected from Helm deletion and Paprika pruning. Authority
+cache claims are retained by the StatefulSet on scale-down and deletion. Their
+configured StorageClasses should also use reclaimPolicy Retain. Retention is not
+backup: take and test off-cluster snapshots of control data.

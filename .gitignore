@@ -1,0 +1,37 @@
+.DS_Store
+.serena/
+.env
+.env.local
+.env.*
+!.env.example
+.envrc
+kubeconfig
+kubeconfig.*
+*.key
+*.pem
+*.p12
+*.pfx
+data/
+dist/
+coverage.out
+*.prof
+
+apps/web/.next/
+apps/web/node_modules/
+.pnpm-store/
+
+# OpenTofu/Terraform runtime state and local inputs. Provider lock files and
+# *.example templates remain versioned.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+backend.hcl

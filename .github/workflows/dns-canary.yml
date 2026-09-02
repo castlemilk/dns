@@ -1,0 +1,76 @@
+name: External delegated DNS canary
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dns-external-canary
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe authorities and public delegation
+    if: >-
+      vars.DNS_CANARY_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      CANARY_ZONE: ${{ vars.DNS_CANARY_ZONE }}
+      CHECK_DELEGATION: "true"
+      DNS_PORT: "53"
+      EXPECTED_NS1: ${{ vars.DNS_EXPECTED_NS1 }}
+      EXPECTED_NS2: ${{ vars.DNS_EXPECTED_NS2 }}
+      NS1_ADDRESS: ${{ vars.DNS_NS1_ADDRESS }}
+      NS2_ADDRESS: ${{ vars.DNS_NS2_ADDRESS }}
+      PROBE_IPV4: ${{ vars.DNS_CANARY_PROBE_IPV4 }}
+      PROBE_NAME: ${{ vars.DNS_CANARY_PROBE_NAME }}
+      PUBLIC_RESOLVERS: 1.1.1.1 8.8.8.8
+    steps:
+      - name: Checkout scheduled revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Validate required canary configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            CANARY_ZONE
+            EXPECTED_NS1
+            EXPECTED_NS2
+            NS1_ADDRESS
+            NS2_ADDRESS
+            PROBE_IPV4
+            PROBE_NAME
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              printf 'GitHub repository variable for %s is required\n' "${name}" >&2
+              exit 2
+            fi
+          done
+
+      - name: Ensure dig is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v dig >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends dnsutils
+          fi
+          dig -v
+
+      - name: Probe both authorities over UDP and TCP through the public Internet
+        shell: bash
+        run: scripts/probe-authorities.sh

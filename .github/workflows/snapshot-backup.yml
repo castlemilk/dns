@@ -1,0 +1,66 @@
+name: Verified encrypted DNS snapshot backup
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dns-snapshot-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Fetch, verify, and retain encrypted snapshot
+    if: >-
+      vars.DNS_SNAPSHOT_BACKUP_ENABLED == 'true' &&
+      (github.event_name == 'schedule' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout scheduled revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 1.27.0
+          cache: false
+
+      - name: Build the snapshot verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -buildvcs=false -trimpath -o "${RUNNER_TEMP}/dns-restore" ./cmd/dns-restore
+
+      - name: Fetch, verify, and encrypt the snapshot
+        shell: bash
+        env:
+          BACKUP_OUTPUT_DIR: ${{ runner.temp }}/dns-snapshot-backup
+          DNS_BACKUP_PASSPHRASE: ${{ secrets.DNS_BACKUP_PASSPHRASE }}
+          DNS_RESTORE_BIN: ${{ runner.temp }}/dns-restore
+          DNS_SNAPSHOT_BEARER_TOKEN: ${{ secrets.DNS_SNAPSHOT_BEARER_TOKEN }}
+          MAX_SNAPSHOT_BYTES: "8388608"
+          SNAPSHOT_URL: https://snapshot.dns.benebsworth.com/internal/v1/snapshot
+          SOURCE_REVISION: ${{ github.sha }}
+        run: scripts/backup-snapshot.sh
+
+      - name: Retain encrypted backup off-region
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dns-snapshot-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/dns-snapshot-backup/*.tar.gz.gpg
+            ${{ runner.temp }}/dns-snapshot-backup/*.tar.gz.gpg.sha256
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0

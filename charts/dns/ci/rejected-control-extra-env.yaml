@@ -1,0 +1,4 @@
+control:
+  extraEnv:
+    - name: DNS_ROLE
+      value: authority

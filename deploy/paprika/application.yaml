@@ -1,0 +1,183 @@
+# Bootstrap once with:
+#   kubectl apply -f deploy/paprika/application.yaml
+#
+# BLOCKED BY DESIGN: replace the git revision and both sha256 image digests
+# before applying. The placeholder digests fail the chart schema, so Paprika
+# cannot deploy mutable or guessed images. The dns-auth Secret must already
+# contain independent api-bearer-token and snapshot-bearer-token keys; never
+# add token data here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dns
+  labels:
+    app.kubernetes.io/name: dns
+    app.kubernetes.io/part-of: dns
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: dns
+  labels:
+    app.kubernetes.io/name: dns
+    app.kubernetes.io/part-of: dns
+spec:
+  description: DNS workloads from the castlemilk/dns repository
+  sourceRepos:
+    - https://github.com/castlemilk/dns.git
+  destinations:
+    - server: "*"
+      namespace: dns
+  kinds:
+    - Deployment
+    - StatefulSet
+    - Service
+    - PersistentVolumeClaim
+    - PodDisruptionBudget
+    - HTTPRoute
+    - Certificate
+    - ReferenceGrant
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: dns
+  namespace: dns
+  labels:
+    app.kubernetes.io/name: dns
+    app.kubernetes.io/part-of: dns
+spec:
+  project: default
+  parameters:
+    # Paprika otherwise injects dns-release, which would change every rendered
+    # Service name and break the stable in-cluster health-check URL below.
+    release-name: dns
+  source:
+    type: git
+    repoUrl: https://github.com/castlemilk/dns.git
+    # Replace with the full 40-character commit SHA containing the chart and
+    # exactly matching the image provenance labels/digests below.
+    revision: REPLACE_WITH_FULL_40_CHARACTER_GIT_SHA
+    path: charts/dns
+    targetNamespace: dns
+    pollInterval: 60s
+    valuesFile: |
+      production: true
+      images:
+        server:
+          tag: ""
+          digest: sha256:REPLACE_WITH_64_HEX_SERVER_DIGEST
+        web:
+          tag: ""
+          digest: sha256:REPLACE_WITH_64_HEX_WEB_DIGEST
+      auth:
+        existingSecret: dns-auth
+        apiBearerTokenKey: api-bearer-token
+        snapshotBearerTokenKey: snapshot-bearer-token
+      control:
+        # Permit zone-file imports up to the aggregate publication ceiling.
+        httpMaxBodyBytes: 8388608
+        nameservers:
+          - ns1.dns.benebsworth.com
+          - ns2.dns.benebsworth.com
+        persistence:
+          # The cluster default deletes its Vultr volume when the PVC is
+          # removed. Retain protects the backing volume from Paprika pruning.
+          storageClass: vultr-block-storage-retain
+      authority:
+        replicaCount: 3
+        snapshot:
+          pollInterval: 5s
+          # Keep the last checksum-valid snapshot serving through a control
+          # outage; readiness degrades only after a full day without refresh.
+          maxStaleness: 24h
+          httpTimeout: 5s
+          # Bounds control admission and authority download/compile together.
+          # Raise only after heap benchmarks and resource limits are reviewed.
+          maxBodyBytes: 8388608
+        cache:
+          persistence:
+            storageClass: vultr-block-storage-retain
+      httpRoute:
+        enabled: true
+        acknowledgePublicControlPlane: true
+        parentRef:
+          name: paprika
+          namespace: envoy-gateway-system
+          sectionName: https
+        hostnames:
+          - dns.benebsworth.com
+      dnsService:
+        # Prefer an out-of-band LB with UDP+TCP rules on one stable address.
+        enabled: false
+        acknowledgeVultrSharedHealthCheckRisk: false
+        # Both protocol Services share this Vultr LB label. Empty derives a
+        # release-qualified label; on VKE, set an existing LB label to reuse
+        # its stable address.
+        sharedLoadBalancerLabel: ""
+        udp:
+          # Portable address hint; support depends on the Vultr CCM release.
+          loadBalancerIP: ""
+        tcp:
+          # Keep this identical to UDP when the CCM honors address hints.
+          loadBalancerIP: ""
+      snapshotRoute:
+        # This exact-path route still requires the distinct snapshot bearer
+        # token; no Connect procedure or UI path is exposed on this hostname.
+        enabled: true
+        acknowledgePublicSnapshotFeed: true
+        hostname: snapshot.dns.benebsworth.com
+      tls:
+        enabled: true
+        clusterIssuer: letsencrypt-prod-dns
+        secretName: dns-tls
+        dnsNames:
+          - dns.benebsworth.com
+          - snapshot.dns.benebsworth.com
+        referenceGrant:
+          enabled: true
+          gatewayNamespace: envoy-gateway-system
+      nodePortService:
+        # The separately managed Vultr LB must target core workers on TCP+UDP
+        # 30053 and use TCP 30053 for health before this Application is created.
+        enabled: true
+        nodePort: 30053
+        externalTrafficPolicy: Cluster
+
+  strategy: Rolling
+  syncPolicy: Auto
+  syncOptions:
+    prune: true
+
+  stages:
+    - name: vke-apps
+      ring: 1
+      autoPromote: true
+
+  healthChecks:
+    - name: control-health
+      expression: http.statusCode == 200
+      interval: 30s
+      httpProbe:
+        method: GET
+        url: http://dns-control.dns.svc.cluster.local:8080/readyz
+        timeout: 5
+    - name: authority-health
+      expression: http.statusCode == 200
+      interval: 30s
+      httpProbe:
+        method: GET
+        url: http://dns-authority-health.dns.svc.cluster.local:8080/readyz
+        timeout: 5
+
+  onFailure:
+    action: rollback
+
+  selfHeal:
+    autoSyncOnDrift: true
+    autoRevertOnHealthFailure: true
+    cooldown: 5m

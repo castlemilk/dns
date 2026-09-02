@@ -1,0 +1,75 @@
+{{- if .Values.dnsService.enabled }}
+{{- $derivedLabel := printf "%s-%s" .Release.Namespace (include "dns.resourceName" (dict "root" . "suffix" "authoritative")) | trunc 63 | trimSuffix "-" }}
+{{- $sharedLabel := default $derivedLabel .Values.dnsService.sharedLoadBalancerLabel }}
+{{- $udpRequired := dict
+  "service.beta.kubernetes.io/vultr-loadbalancer-label" $sharedLabel
+  "service.beta.kubernetes.io/vultr-loadbalancer-protocol" "udp"
+  "service.beta.kubernetes.io/vultr-loadbalancer-backend-protocol" "udp"
+}}
+{{- $udpAnnotations := mergeOverwrite (dict) .Values.dnsService.udp.annotations $udpRequired }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authoritative-udp") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authoritative-dns") | nindent 4 }}
+  annotations:
+    {{- toYaml $udpAnnotations | nindent 4 }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ .Values.dnsService.udp.externalTrafficPolicy }}
+  {{- with .Values.dnsService.udp.loadBalancerClass }}
+  loadBalancerClass: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.dnsService.udp.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.dnsService.udp.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: dns-udp
+      protocol: UDP
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 4 }}
+---
+{{- $tcpRequired := dict
+  "service.beta.kubernetes.io/vultr-loadbalancer-label" $sharedLabel
+  "service.beta.kubernetes.io/vultr-loadbalancer-protocol" "tcp"
+  "service.beta.kubernetes.io/vultr-loadbalancer-backend-protocol" "tcp"
+}}
+{{- $tcpAnnotations := mergeOverwrite (dict) .Values.dnsService.tcp.annotations $tcpRequired }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "authoritative-tcp") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "authoritative-dns") | nindent 4 }}
+  annotations:
+    {{- toYaml $tcpAnnotations | nindent 4 }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ .Values.dnsService.tcp.externalTrafficPolicy }}
+  {{- with .Values.dnsService.tcp.loadBalancerClass }}
+  loadBalancerClass: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.dnsService.tcp.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.dnsService.tcp.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: dns-tcp
+      protocol: TCP
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "authority") | nindent 4 }}
+{{- end }}

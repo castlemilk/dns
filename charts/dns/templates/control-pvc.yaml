@@ -1,0 +1,22 @@
+{{- if and .Values.control.persistence.enabled (not .Values.control.persistence.existingClaim) }}
+{{- $requiredAnnotations := dict "helm.sh/resource-policy" "keep" "paprika.io/prune" "false" }}
+{{- $annotations := mergeOverwrite (dict) .Values.control.persistence.annotations $requiredAnnotations }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dns.controlClaimName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "control") | nindent 4 }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.control.persistence.accessModes | nindent 4 }}
+  {{- with .Values.control.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.control.persistence.size }}
+{{- end }}

@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package dns.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service DNSService {
+  rpc ListZones(ListZonesRequest) returns (ListZonesResponse) {}
+  rpc CreateZone(CreateZoneRequest) returns (CreateZoneResponse) {}
+  rpc DeleteZone(DeleteZoneRequest) returns (DeleteZoneResponse) {}
+  rpc CreateRecord(CreateRecordRequest) returns (CreateRecordResponse) {}
+  rpc UpdateRecord(UpdateRecordRequest) returns (UpdateRecordResponse) {}
+  rpc DeleteRecord(DeleteRecordRequest) returns (DeleteRecordResponse) {}
+  rpc ImportZone(ImportZoneRequest) returns (ImportZoneResponse) {}
+  rpc ExportZone(ExportZoneRequest) returns (ExportZoneResponse) {}
+}
+
+enum ZoneImportMode {
+  ZONE_IMPORT_MODE_UNSPECIFIED = 0;
+  ZONE_IMPORT_MODE_CREATE = 1;
+  ZONE_IMPORT_MODE_REPLACE = 2;
+}
+
+enum RecordType {
+  RECORD_TYPE_UNSPECIFIED = 0;
+  RECORD_TYPE_A = 1;
+  RECORD_TYPE_AAAA = 2;
+  RECORD_TYPE_CNAME = 3;
+  RECORD_TYPE_MX = 4;
+  RECORD_TYPE_TXT = 5;
+  RECORD_TYPE_NS = 6;
+  RECORD_TYPE_SRV = 7;
+  RECORD_TYPE_CAA = 8;
+  RECORD_TYPE_SOA = 9;
+}
+
+message Record {
+  string id = 1;
+  string name = 2;
+  RecordType type = 3;
+  uint32 ttl = 4;
+  string value = 5;
+  bool managed = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message Zone {
+  string id = 1;
+  string name = 2;
+  uint32 serial = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  repeated string nameservers = 6;
+  repeated Record records = 7;
+}
+
+message ServerStatus {
+  uint32 zone_count = 1;
+  uint32 record_count = 2;
+  uint64 queries_total = 3;
+  google.protobuf.Timestamp started_at = 4;
+}
+
+message ListZonesRequest {}
+
+message ListZonesResponse {
+  repeated Zone zones = 1;
+  ServerStatus status = 2;
+}
+
+message CreateZoneRequest {
+  string name = 1;
+}
+
+message CreateZoneResponse {
+  Zone zone = 1;
+}
+
+message DeleteZoneRequest {
+  string zone_id = 1;
+}
+
+message DeleteZoneResponse {}
+
+message CreateRecordRequest {
+  string zone_id = 1;
+  string name = 2;
+  RecordType type = 3;
+  uint32 ttl = 4;
+  string value = 5;
+}
+
+message CreateRecordResponse {
+  Zone zone = 1;
+}
+
+message UpdateRecordRequest {
+  string zone_id = 1;
+  string record_id = 2;
+  string name = 3;
+  RecordType type = 4;
+  uint32 ttl = 5;
+  string value = 6;
+}
+
+message UpdateRecordResponse {
+  Zone zone = 1;
+}
+
+message DeleteRecordRequest {
+  string zone_id = 1;
+  string record_id = 2;
+}
+
+message DeleteRecordResponse {
+  Zone zone = 1;
+}
+
+message ImportZoneRequest {
+  string name = 1;
+  string zone_file = 2;
+  ZoneImportMode mode = 3;
+  bool dry_run = 4;
+}
+
+message ImportZoneResponse {
+  Zone zone = 1;
+  repeated string warnings = 2;
+  bool dry_run = 3;
+}
+
+message ExportZoneRequest {
+  string zone_id = 1;
+}
+
+message ExportZoneResponse {
+  string name = 1;
+  string zone_file = 2;
+}

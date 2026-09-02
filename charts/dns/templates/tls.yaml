@@ -1,0 +1,36 @@
+{{- if .Values.tls.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "tls") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "tls") | nindent 4 }}
+spec:
+  secretName: {{ .Values.tls.secretName }}
+  dnsNames:
+    {{- toYaml .Values.tls.dnsNames | nindent 4 }}
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: {{ .Values.tls.clusterIssuer }}
+{{- if .Values.tls.referenceGrant.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "allow-gateway-tls") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "tls") | nindent 4 }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: {{ .Values.tls.referenceGrant.gatewayNamespace }}
+  to:
+    - group: ""
+      kind: Secret
+      name: {{ .Values.tls.secretName }}
+{{- end }}
+{{- end }}
