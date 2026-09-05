@@ -45,8 +45,10 @@ fi
 
 known_hosts_file="$(mktemp "${TMPDIR:-/tmp}/simpledns-known-hosts.XXXXXX")"
 candidate_host_keys="$(mktemp "${TMPDIR:-/tmp}/simpledns-host-keys.XXXXXX")"
-# Invoked by the EXIT trap below.
-# shellcheck disable=SC2329
+# Invoked by the EXIT trap below. SC2329 is the function itself looking
+# uncalled; SC2317 is its body looking unreachable, which shellcheck 0.9 (the
+# ubuntu-24.04 runner's version) reports and 0.10+ no longer does.
+# shellcheck disable=SC2329,SC2317
 cleanup() {
   rm -f -- "$known_hosts_file" "$candidate_host_keys"
 }
