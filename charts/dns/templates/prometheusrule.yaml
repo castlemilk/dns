@@ -1,4 +1,4 @@
-{{- if and .Values.observability.alerts.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+{{- if and .Values.observability.alerts.enabled (or (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") .Values.observability.assumeMonitoringCRDs) }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:

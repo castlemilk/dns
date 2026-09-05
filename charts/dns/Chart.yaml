@@ -1,10 +1,14 @@
 apiVersion: v2
+# No kubeVersion constraint. The chart needs Kubernetes 1.27 or newer for the
+# StatefulSet PVC retention policy it relies on, but Paprika renders manifests
+# in a stub environment that reports v1.20.0, so declaring the constraint makes
+# the chart undeployable through GitOps. The minimum is documented in
+# docs/architecture.md and enforced by the platform, not by this file.
 name: dns
 description: A lightweight authoritative DNS hosting platform
 type: application
 version: 0.3.0
 appVersion: "0.3.0"
-kubeVersion: ">=1.27.0-0"
 home: https://github.com/castlemilk/dns
 sources:
   - https://github.com/castlemilk/dns

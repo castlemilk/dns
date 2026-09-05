@@ -357,6 +357,11 @@ platform:
 # required. No authentication material belongs in these values.
 observability:
   enabled: false
+  # Paprika renders manifests in a stub environment that reports no CRDs, so the
+  # ServiceMonitor and PrometheusRule capability probes are always false there.
+  # Set this when the target cluster is known to have the Prometheus operator
+  # CRDs installed and those objects should be rendered regardless.
+  assumeMonitoringCRDs: false
   environment: development
   otlp:
     endpoint: ""

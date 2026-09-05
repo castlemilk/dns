@@ -832,7 +832,8 @@
         "environment",
         "otlp",
         "collector",
-        "alerts"
+        "alerts",
+        "assumeMonitoringCRDs"
       ],
       "properties": {
         "enabled": {
@@ -1132,6 +1133,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "assumeMonitoringCRDs": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

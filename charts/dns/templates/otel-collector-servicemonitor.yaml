@@ -1,4 +1,4 @@
-{{- if and .Values.observability.collector.enabled .Values.observability.collector.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+{{- if and .Values.observability.collector.enabled .Values.observability.collector.serviceMonitor.enabled (or (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") .Values.observability.assumeMonitoringCRDs) }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
