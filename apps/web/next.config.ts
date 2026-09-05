@@ -23,7 +23,13 @@ if (process.env.NODE_ENV === "production") {
     key: "Content-Security-Policy",
     value: [
       "base-uri 'self'",
-      "connect-src 'self'",
+      // Loopback is here for one screen: /cli/authorize posts the operator token
+      // to the callback `simple auth login` is listening on
+      // (http://127.0.0.1:<ephemeral>/callback). Without it `connect-src 'self'`
+      // blocks that POST in production and the CLI login can never complete.
+      // Loopback is a potentially-trustworthy origin, so it is not mixed
+      // content, and it can only ever reach the operator's own machine.
+      "connect-src 'self' http://127.0.0.1:*",
       "default-src 'self'",
       "font-src 'self'",
       "form-action 'self'",
