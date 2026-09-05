@@ -85,7 +85,16 @@ func TestWebhookRejectsEverySignatureFailureWithFourHundred(t *testing.T) {
 		{"malformed header", "not-a-signature"},
 		{"tampered signature", func() string {
 			signed := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: body, Secret: testWebhookSecret})
-			return signed.Header[:len(signed.Header)-1] + "0"
+			// The last character is one hex digit of the HMAC, so substituting a
+			// fixed "0" leaves the header untouched one time in sixteen and the
+			// signature still verifies. Pick a replacement that differs from
+			// whatever is there.
+			last := signed.Header[len(signed.Header)-1]
+			replacement := byte('0')
+			if last == replacement {
+				replacement = '1'
+			}
+			return signed.Header[:len(signed.Header)-1] + string(replacement)
 		}()},
 		{"stale timestamp", webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{
 			Payload: body, Secret: testWebhookSecret, Timestamp: time.Now().Add(-10 * time.Minute),
