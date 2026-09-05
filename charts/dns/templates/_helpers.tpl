@@ -519,6 +519,18 @@ that runs in a production render. Expects field and url.
 {{- if and .Values.nodePortService.enabled .Values.dnsService.enabled -}}
 {{- fail "nodePortService.enabled and dnsService.enabled are mutually exclusive" -}}
 {{- end -}}
+{{- if and .Values.externalIPService.enabled .Values.dnsService.enabled -}}
+{{- fail "externalIPService.enabled and dnsService.enabled are mutually exclusive" -}}
+{{- end -}}
+{{- if and .Values.externalIPService.enabled .Values.nodePortService.enabled -}}
+{{- fail "externalIPService.enabled and nodePortService.enabled are mutually exclusive" -}}
+{{- end -}}
+{{- if and .Values.externalIPService.enabled (eq (len .Values.externalIPService.addresses) 0) -}}
+{{- fail "externalIPService.enabled requires at least one address in externalIPService.addresses" -}}
+{{- end -}}
+{{- if and .Values.externalIPService.enabled (gt (len .Values.externalIPService.addresses) (int .Values.authority.replicaCount)) -}}
+{{- fail "externalIPService.addresses must not exceed authority.replicaCount so every published address has an authority to serve it" -}}
+{{- end -}}
 {{- if and .Values.dnsService.enabled (not .Values.dnsService.acknowledgeVultrSharedHealthCheckRisk) -}}
 {{- fail "dnsService.enabled requires dnsService.acknowledgeVultrSharedHealthCheckRisk=true" -}}
 {{- end -}}

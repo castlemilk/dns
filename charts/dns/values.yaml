@@ -532,3 +532,14 @@ tls:
   referenceGrant:
     enabled: true
     gatewayNamespace: envoy-gateway-system
+
+# Authoritative DNS published on node addresses. A Vultr load balancer cannot
+# carry TCP/53 and UDP/53 at once (its API refuses a second forwarding rule on
+# a frontend port already in use), and hostPort is forbidden by the baseline and
+# restricted Pod Security levels, so this is the path that serves both protocols
+# without a load balancer and without relaxing pod security. Every address must
+# already route to a node of this cluster; use one per nameserver hostname.
+externalIPService:
+  enabled: false
+  addresses: []
+  annotations: {}
