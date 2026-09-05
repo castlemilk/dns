@@ -12,8 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 	"github.com/miekg/dns"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestStoreZoneCRUD(t *testing.T) {
@@ -83,6 +87,88 @@ func TestStoreZoneCRUD(t *testing.T) {
 	if err := store.Delete(ctx, created.ID); !errors.Is(err, zone.ErrNotFound) {
 		t.Errorf("second Delete error = %v, want ErrNotFound", err)
 	}
+}
+
+func TestStoreMetricsRecordFailedWriteAndAdmission(t *testing.T) {
+	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown meter provider: %v", err)
+		}
+	})
+	metrics, err := telemetry.NewMetrics(provider.Meter("store-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	reject := false
+	store, err := zone.Open(
+		filepath.Join(t.TempDir(), "zones.db"),
+		[]string{"ns1.provider.example"},
+		zone.WithMetrics(metrics),
+		zone.WithSnapshotAdmission(func([]zone.Zone) error {
+			if reject {
+				return errors.New("test admission rejection")
+			}
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	reject = true
+	if _, err := store.Create(context.Background(), "rejected.test"); err == nil {
+		t.Fatal("Create succeeded despite admission rejection")
+	}
+
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if !hasStorePoint(collected, "simpledns.store.transactions", map[string]string{
+		"db.operation":        "create_zone",
+		"db.transaction.type": "write",
+		"outcome":             "error",
+	}) {
+		t.Fatal("failed create transaction metric is absent")
+	}
+	if !hasStorePoint(collected, "simpledns.snapshot.admissions", map[string]string{"outcome": "error"}) {
+		t.Fatal("failed snapshot admission metric is absent")
+	}
+}
+
+func hasStorePoint(collected metricdata.ResourceMetrics, name string, want map[string]string) bool {
+	for _, scope := range collected.ScopeMetrics {
+		for _, metricValue := range scope.Metrics {
+			if metricValue.Name != name {
+				continue
+			}
+			sum, ok := metricValue.Data.(metricdata.Sum[int64])
+			if !ok {
+				continue
+			}
+			for _, point := range sum.DataPoints {
+				matched := true
+				for key, wantValue := range want {
+					value, exists := point.Attributes.Value(attribute.Key(key))
+					if !exists || value.AsString() != wantValue {
+						matched = false
+						break
+					}
+				}
+				if matched {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func TestStoreRecordCRUDUpdatesSerialAndSOA(t *testing.T) {

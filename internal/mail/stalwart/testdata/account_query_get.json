@@ -1,0 +1,47 @@
+{
+  "methodResponses": [
+    [
+      "x:Account/query",
+      {
+        "accountId": "c",
+        "queryState": "n",
+        "canCalculateChanges": true,
+        "position": 0,
+        "ids": [
+          "d"
+        ]
+      },
+      "0"
+    ],
+    [
+      "x:Account/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "createdAt": "2026-09-03T08:53:21Z",
+            "quotas": {
+              "maxDiskQuota": 5368709120
+            },
+            "aliases": {
+              "0": {
+                "enabled": true,
+                "name": "hello",
+                "domainId": "c",
+                "description": null
+              }
+            },
+            "description": "Mara",
+            "usedDiskQuota": 1894,
+            "emailAddress": "mara@probe.test",
+            "domainId": "c",
+            "id": "d"
+          }
+        ],
+        "notFound": []
+      },
+      "1"
+    ]
+  ],
+  "sessionState": "240fbd1a"
+}

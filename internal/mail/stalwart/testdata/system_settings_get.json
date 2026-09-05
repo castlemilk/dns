@@ -1,0 +1,26 @@
+{
+  "methodResponses": [
+    [
+      "x:SystemSettings/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "defaultHostname": "mail.local.test",
+            "defaultDomainId": "b",
+            "mailExchangers": {
+              "0": {
+                "hostname": null,
+                "priority": 10
+              }
+            },
+            "id": "singleton"
+          }
+        ],
+        "notFound": []
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

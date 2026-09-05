@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package deephost.v1;
+
+import "deephost/v1/model.proto";
+
+option go_package = "github.com/benebsworth/deephost/gen/go/deephost/v1;deephostv1";
+
+// Invoke is the internal RPC between router and hydra runtime. It carries a
+// single logical HTTP request for a specific immutable artifact.
+service InvokeService {
+  rpc HandleInvoke(InvokeRequest) returns (InvokeResponse);
+}
+
+message HTTPHeaders {
+  map<string, string> values = 1;
+}
+
+message InvokeRequest {
+  // Fully qualified artifact key, e.g. tenant-acme/storefront/<sha>.tar.zst
+  string artifact_key = 1;
+  Framework framework = 2;
+  string method = 3;
+  string path = 4;
+  string query = 5;
+  HTTPHeaders headers = 6;
+  bytes body = 7;
+  // Per-app environment injected into the runtime (never baked into artifacts).
+  map<string, string> app_env = 8;
+}
+
+message InvokeResponse {
+  int32 status = 1;
+  HTTPHeaders headers = 2;
+  bytes body = 3;
+}

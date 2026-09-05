@@ -1,0 +1,59 @@
+# gitleaks configuration for simpledns.
+#
+# The allowlist holds the four literals that are deliberately committed because
+# they are not credentials for anything. The rules below it add the engine
+# credentials the default rule set does not recognise: a Stalwart management API
+# key and the two live Stripe key prefixes.
+#
+# Nothing here weakens the defaults: `extend.useDefault` keeps every built-in
+# rule, and each allowlisted literal is an exact string, never a pattern that
+# could hide a real secret.
+
+title = "simpledns"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Fixed, non-secret literals committed on purpose:
+  - the fake Stripe provider's signing secret and test key, which only ever
+    verify payloads the in-process fake signed for itself;
+  - the mail test fixtures' placeholder API key, which every recorded Stalwart
+    transcript uses in place of the real one;
+  - the invented Stripe test key in internal/app/platform_test.go, which is fed
+    to the redacting logger purely to prove the logger removes it (the same test
+    also feeds an invented GitHub token and Stalwart key).
+"""
+regexTarget = "match"
+regexes = [
+  '''whsec_fake_local_0000000000000000''',
+  '''sk_test_fake''',
+  '''API_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
+  '''sk_test_51AbCdEfGhIjKlMnOp''',
+]
+
+# A Stalwart API key is "API_" plus 38 base62 characters (mail-facts.md §2). The
+# default rule set has no Stalwart rule, so a leaked MAIL_API_TOKEN would
+# otherwise pass. The committed test-fixture key is the allowlisted literal
+# above.
+[[rules]]
+id = "stalwart-api-key"
+description = "Stalwart management API key"
+regex = '''API_[A-Za-z0-9]{38}'''
+keywords = ["api_"]
+
+# Live Stripe keys must never reach the repository. Test and sandbox keys are
+# left to the default Stripe rule; these two catch the live prefixes on their
+# own so a truncated or reformatted key is still reported.
+[[rules]]
+id = "stripe-live-secret-key"
+description = "Live Stripe secret key"
+regex = '''sk_live_[A-Za-z0-9]{8,}'''
+keywords = ["sk_live_"]
+
+[[rules]]
+id = "stripe-live-restricted-key"
+description = "Live Stripe restricted key"
+regex = '''rk_live_[A-Za-z0-9]{8,}'''
+keywords = ["rk_live_"]

@@ -36,6 +36,8 @@ func TestLoadDefaults(t *testing.T) {
 		SnapshotHTTPTimeout:  5 * time.Second,
 		HTTPMaxBodyBytes:     1 << 20,
 		SnapshotMaxBodyBytes: 8 << 20,
+		PlatformPath:         "data/platform.db",
+		Activity:             config.Activity{MaxEvents: config.DefaultActivityMaxEvents},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load defaults = %#v, want %#v", got, want)
@@ -86,6 +88,8 @@ func TestLoadOverrides(t *testing.T) {
 		SnapshotHTTPTimeout:  4 * time.Second,
 		HTTPMaxBodyBytes:     2048,
 		SnapshotMaxBodyBytes: 8192,
+		PlatformPath:         "/data/platform.db",
+		Activity:             config.Activity{MaxEvents: config.DefaultActivityMaxEvents},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load overrides = %#v, want %#v", got, want)

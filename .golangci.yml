@@ -5,7 +5,54 @@ run:
   modules-download-mode: readonly
 
 linters:
+  enable:
+    # spec2 §7.1: activity kinds are typed constants so a producer cannot
+    # invent one. `activity.Kind("…")` is the only way past the type system.
+    #
+    # forbidigo is the SECONDARY belt here, not the rule. The rule is
+    # TestNoFreeFormKindConversions in internal/activity, which walks the AST
+    # of every non-test file under internal/ (kinds.go excepted) and fails on
+    # any `activity.Kind(…)` call expression. It exists because forbidigo has
+    # two verified blind spots for exactly this pattern:
+    #
+    #   1. it walks function bodies only, so a package-level
+    #      `var k = activity.Kind("made.up")` — the shape someone reaching for
+    #      a missing constant would write — is never reported;
+    #   2. the `source:` exclusion below is line-based, so a gofmt-legal
+    #      one-liner such as
+    #      `func f(s string) activity.Kind { return activity.Kind(s) }`
+    #      is excluded by the type mention that shares its line.
+    #
+    # Both were reproduced with scratch files in internal/platform. Keep this
+    # linter for the fast in-editor signal; keep the test for the guarantee.
+    - forbidigo
   settings:
     errcheck:
       check-type-assertions: true
       check-blank: true
+    forbidigo:
+      # analyze-types would rewrite the reported text to the bare type name and
+      # start matching struct field keys named Kind; the plain source form is
+      # what the exclusion below reasons about.
+      analyze-types: false
+      forbid:
+        - pattern: ^activity\.Kind$
+          msg: >-
+            activity kinds are typed constants (spec2 §7.1): add one to
+            internal/activity/kinds.go instead of converting a free-form
+            string.
+  exclusions:
+    rules:
+      # forbidigo reports every mention of the identifier, including the
+      # legitimate uses of `activity.Kind` as a type (`kind activity.Kind`,
+      # `[]activity.Kind`). Only the conversion is forbidden, so drop the
+      # issues whose source line mentions the type without an opening paren
+      # after it. RE2 has no lookahead, hence the explicit alternation.
+      - linters: [forbidigo]
+        source: activity\.Kind($|[^(])
+      # kinds.go declares the constants; the tests deliberately build an
+      # unknown kind to prove Record maps it onto "other".
+      - path: internal/activity/kinds\.go
+        linters: [forbidigo]
+      - path: _test\.go
+        linters: [forbidigo]

@@ -1,0 +1,8 @@
+# Render-only fixture: envFrom is a name filter the chart cannot enforce, so
+# the whole key is refused. A configMapRef would also put the engine
+# credentials this chart only ever reads through a secretKeyRef into plaintext
+# in a namespace object.
+control:
+  extraEnvFrom:
+    - configMapRef:
+        name: smuggled-engine-config

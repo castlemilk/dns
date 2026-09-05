@@ -17,7 +17,11 @@ import (
 	"time"
 
 	"github.com/castlemilk/dns/internal/authoritative"
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestConsumerFetchCachesPublishesAndBecomesStale(t *testing.T) {
@@ -189,6 +193,17 @@ func TestConsumerNotModifiedRefreshesReadiness(t *testing.T) {
 
 func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown meter provider: %v", err)
+		}
+	})
+	metrics, err := telemetry.NewMetrics(provider.Meter("snapshot-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
 	now := time.Date(2026, time.September, 2, 3, 4, 5, 0, time.UTC)
 	validRaw, _, err := Build([]zone.Zone{validZone("one.test", "ns1.dns.test.", now)}, now, false)
 	if err != nil {
@@ -214,10 +229,10 @@ func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	})}
 
 	cachePath := filepath.Join(t.TempDir(), "snapshot.json")
-	server := authoritative.New(nil, authoritative.DefaultMaxUDPSize)
-	status := NewStatus(time.Minute)
+	server := authoritative.New(nil, authoritative.DefaultMaxUDPSize, metrics)
+	status := NewStatus(time.Minute, metrics)
 	status.now = func() time.Time { return now }
-	consumer := NewConsumer(server, status, client, "http://control"+Path, "secret", cachePath, 1<<20, false, discardLogger())
+	consumer := NewConsumer(server, status, client, "http://control"+Path, "secret", cachePath, 1<<20, false, discardLogger(), metrics)
 	consumer.now = func() time.Time { return now }
 	if err := consumer.Fetch(context.Background()); err != nil {
 		t.Fatalf("initial Fetch: %v", err)
@@ -226,6 +241,29 @@ func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	body.Store(invalidRaw)
 	if err := consumer.Fetch(context.Background()); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("invalid Fetch error = %v", err)
+	}
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	checksumMetric := snapshotMetric(collected, "simpledns.snapshot.checksum.failures")
+	checksumSum, ok := checksumMetric.Data.(metricdata.Sum[int64])
+	if !ok || len(checksumSum.DataPoints) != 1 || checksumSum.DataPoints[0].Value != 1 {
+		t.Fatalf("checksum failures = %#v, want 1", checksumMetric.Data)
+	}
+	compileMetric := snapshotMetric(collected, "simpledns.authoritative.snapshot.compiles")
+	compileSum, ok := compileMetric.Data.(metricdata.Sum[int64])
+	if !ok || len(compileSum.DataPoints) != 1 || compileSum.DataPoints[0].Value != 1 {
+		t.Fatalf("authoritative compiles = %#v, want exactly one successful consumer compile", compileMetric.Data)
+	}
+	compileOutcome, ok := compileSum.DataPoints[0].Attributes.Value(attribute.Key("outcome"))
+	if !ok || compileOutcome.AsString() != "success" {
+		t.Errorf("authoritative compile outcome = %q, %t; want success", compileOutcome.AsString(), ok)
+	}
+	compileDurationMetric := snapshotMetric(collected, "simpledns.authoritative.snapshot.compile.duration")
+	compileDuration, ok := compileDurationMetric.Data.(metricdata.Histogram[float64])
+	if !ok || len(compileDuration.DataPoints) != 1 || compileDuration.DataPoints[0].Count != 1 {
+		t.Fatalf("authoritative compile duration = %#v, want exactly one consumer compile observation", compileDurationMetric.Data)
 	}
 	if zones, _ := server.Counts(); zones != 1 {
 		t.Fatalf("zone count after rejection = %d, want 1", zones)
@@ -249,6 +287,18 @@ func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	if zones, _ := server.Counts(); zones != 1 {
 		t.Fatalf("older snapshot changed zone count to %d", zones)
 	}
+}
+
+func snapshotMetric(collected metricdata.ResourceMetrics, name string) *metricdata.Metrics {
+	for scopeIndex := range collected.ScopeMetrics {
+		for metricIndex := range collected.ScopeMetrics[scopeIndex].Metrics {
+			value := &collected.ScopeMetrics[scopeIndex].Metrics[metricIndex]
+			if value.Name == name {
+				return value
+			}
+		}
+	}
+	return &metricdata.Metrics{}
 }
 
 func TestConsumerBoundsAndValidatesCache(t *testing.T) {

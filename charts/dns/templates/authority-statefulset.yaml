@@ -118,13 +118,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecret }}
                   key: {{ .Values.auth.snapshotBearerTokenKey }}
+            {{- if .Values.observability.enabled }}
+            {{- include "dns.otelEnv" (dict "root" . "component" "authority") | nindent 12 }}
+            {{- end }}
             {{- with .Values.authority.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.authority.extraEnvFrom }}
-          envFrom:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           volumeMounts:
             - name: cache
               mountPath: /cache

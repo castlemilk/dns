@@ -1,0 +1,65 @@
+{
+  "methodResponses": [
+    [
+      "x:QueuedMessage/query",
+      {
+        "accountId": "c",
+        "queryState": "n",
+        "canCalculateChanges": true,
+        "position": 0,
+        "ids": [
+          "j1",
+          "j2"
+        ]
+      },
+      "0"
+    ],
+    [
+      "x:QueuedMessage/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "id": "j1",
+            "returnPath": "sender@example.org",
+            "createdAt": "2026-09-03T09:10:00Z",
+            "nextRetry": "2026-09-03T09:15:00Z",
+            "recipients": {
+              "someone@example.com": {
+                "orcpt": "rfc822;team@probe.test",
+                "queueName": "remote",
+                "retryCount": 2,
+                "retryDue": "2026-09-03T09:15:00Z",
+                "status": {
+                  "@type": "TemporaryFailure",
+                  "code": 451,
+                  "message": "deferred"
+                }
+              }
+            }
+          },
+          {
+            "id": "j2",
+            "returnPath": "noise@elsewhere.invalid",
+            "createdAt": "2026-09-03T09:11:00Z",
+            "nextRetry": null,
+            "recipients": {
+              "nobody@elsewhere.invalid": {
+                "orcpt": null,
+                "queueName": "remote",
+                "retryCount": 0,
+                "retryDue": "2026-09-03T09:12:00Z",
+                "status": {
+                  "@type": "Scheduled"
+                }
+              }
+            }
+          }
+        ],
+        "notFound": []
+      },
+      "1"
+    ]
+  ],
+  "sessionState": "240fbd1a"
+}

@@ -185,6 +185,25 @@ The authority server listens on unprivileged container port 1053; Kubernetes Ser
 
 These are baseline containment settings, not a complete security program. Public authoritative service also needs load-balancer/DDoS controls, dependency and image scanning, off-provider control-data backups, monitoring, operational access controls, and an incident/runbook process. It also needs an independently operated authority; follow the [production launch and cutover runbook](production-launch.md) for the Sydney/Melbourne topology and delegation gates.
 
+### Telemetry plane
+
+Control, authority, and web export server-side OTLP to two in-cluster
+OpenTelemetry Collectors. The collectors expose application metrics on 8889
+and their own health metrics on 8888 through a headless Service. Prometheus
+therefore discovers every collector replica instead of scraping a randomly
+selected ClusterIP backend. Client-IP affinity normally keeps each cumulative
+SDK stream on one collector, and short exporter series expiry bounds duplicate
+last values after failover.
+
+The collector converts sampled spans into bounded request metrics and has no
+raw trace or debug exporter. Application instrumentation excludes DNS names,
+record content, IDs, URLs, headers, addresses, and errors; the Next.js browser
+bundle contains no telemetry SDK. A NetworkPolicy admits OTLP only from the
+three application components and scrape traffic only from the configured
+monitoring workload. Collector loss is intentionally fail-open for serving and
+mutations. See the [observability runbook](observability.md) for the metric
+catalog, VKE Prometheus integration, and verification gates.
+
 ## Authoritative topology requirements
 
 A registrable production zone should delegate to at least two stable nameserver names backed by independently operated endpoints. They should not share a single node, load balancer, cluster, region, storage volume, or control-plane failure mode.
@@ -207,7 +226,7 @@ The three charted authority pods are not three independent sites: they share one
 - A stale authority continues answering from that immutable snapshot, but Kubernetes readiness fails and removes it from ready backends after the configured window.
 - `Recreate` avoids concurrent bbolt ownership. A short control rollout does not directly interrupt authority DNS; it only prevents refresh until control returns.
 - The retained control PVC protects against an ordinary Pod replacement. Authority cache PVCs are useful logical recovery copies of the last valid zone snapshot. All remain provider- and region-correlated, so they do not replace a separately managed verified snapshot archive or bbolt-consistent copy outside the cluster's failure domain.
-- In-process query counters reset on restart. Structured logs and API counts are not substitutes for durable metrics.
+- In-process query counters reset on restart. OpenTelemetry counters are also process-lifetime cumulative values, but Prometheus preserves their samples and handles resets across pod restarts.
 
 ### Snapshot verification and restore
 
@@ -239,14 +258,14 @@ For disaster recovery where resolvers must observe a newer SOA, add `--bump-seri
 - Authority cache PVCs are logical recovery copies, not durable off-provider archival backups
 - ASCII DNS names only; callers must provide IDNs as punycode
 - A focused record set rather than the full DNS RR type registry
-- Basic process/freshness probes and counters, without durable Prometheus metrics, tracing, SLOs, or end-to-end DNS health checks
+- Prometheus metrics and span-derived request metrics, but no retained trace backend, Alertmanager notification delivery, formal SLO/error-budget policy, or end-to-end public DNS health proof
 - No DNS response-rate limiting (RRL) or built-in DDoS mitigation
 
 ### Roadmap
 
 1. **Strengthen control operations:** add identities, roles/tenancy, audit events, request limits, RRL, secret rotation, and automated off-provider snapshot archival.
 2. **Strengthen snapshot distribution:** add version/acknowledgement observability, safe rollback, and independently operated authority fleet management.
-3. **Meet DNS availability requirements:** complete the independent Sydney/Melbourne topology, external UDP/TCP probes, delegation monitoring, durable metrics, and SLOs.
+3. **Meet DNS availability requirements:** complete the independent Sydney/Melbourne topology, external UDP/TCP probes, delegation monitoring, alert delivery, and formal SLOs.
 4. **Add protocol operations:** AXFR/IXFR/NOTIFY with TSIG and a supported primary/secondary model.
 5. **Add DNSSEC:** offline/online key roles, automated rotation, signing, DS publication workflow, and validation monitoring.
 6. **Optimize from evidence:** extend the current microbenchmarks with representative multi-zone corpora and profiles, then consider incremental compilation, compact indexes, and pre-encoded wire RRsets inspired by the immutable-cache principles above.

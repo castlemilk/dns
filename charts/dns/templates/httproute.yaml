@@ -26,16 +26,49 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
+    {{- range (include "dns.apiPathPrefixes" . | fromYamlArray) }}
     - matches:
         - path:
             type: PathPrefix
-            value: {{ .Values.httpRoute.apiPathPrefix | quote }}
+            value: {{ . }}
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ include "dns.resourceName" (dict "root" $ "suffix" "control") }}
+          port: {{ $.Values.control.service.port }}
+          weight: 1
+    {{- end }}
+    {{- if and .Values.platform.hosting.enabled .Values.platform.hosting.uploads.enabled }}
+    # A folder upload streams for far longer than Envoy's 15 s default route
+    # timeout, so this one prefix gets its own bound. The handler still applies
+    # its own body cap and read deadline.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /hosting/v1/uploads
+      timeouts:
+        request: 10m
       backendRefs:
         - group: ""
           kind: Service
           name: {{ include "dns.resourceName" (dict "root" . "suffix" "control") }}
           port: {{ .Values.control.service.port }}
           weight: 1
+    {{- end }}
+    {{- if .Values.platform.billing.webhookRoute.enabled }}
+    # Exactly one unauthenticated path. It is signature-verified, body-capped,
+    # and rejects any request carrying an Origin header.
+    - matches:
+        - path:
+            type: Exact
+            value: /billing/v1/stripe/webhook
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ include "dns.resourceName" (dict "root" . "suffix" "control") }}
+          port: {{ .Values.control.service.port }}
+          weight: 1
+    {{- end }}
     - matches:
         - path:
             type: PathPrefix

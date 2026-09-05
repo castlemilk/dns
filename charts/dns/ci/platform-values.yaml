@@ -1,0 +1,92 @@
+# Render-only fixture. It is the production topology with every engine turned
+# on, so the chart job proves that the platform environment, the engine
+# secretKeyRefs, the upload volume, and the extra HTTPRoute rules all render
+# together. Every digest, hostname, address, and Secret name here is a
+# placeholder and must never be used for a live release.
+production: true
+images:
+  server:
+    tag: ""
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  web:
+    tag: ""
+    digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+auth:
+  existingSecret: dns-auth-render-test
+control:
+  httpMaxBodyBytes: 8388608
+  nameservers:
+    - ns1.dns.benebsworth.com
+    - ns2.dns.benebsworth.com
+  persistence:
+    storageClass: vultr-block-storage-retain
+authority:
+  snapshot:
+    maxStaleness: 24h
+    maxBodyBytes: 8388608
+  cache:
+    persistence:
+      storageClass: vultr-block-storage-retain
+platform:
+  storePath: /data/platform.db
+  activity:
+    maxEvents: 50000
+  hosting:
+    enabled: true
+    # Cluster-local Service address: allowed in production without TLS because
+    # the request never leaves the cluster network.
+    apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
+    tenant: simple
+    gatewayHostname: deephost.benebsworth.com
+    gatewayAddresses:
+      - 203.0.113.10
+    gatewayAllowedCidrs:
+      - 203.0.113.0/24
+    appsSuffix: apps.deephost.benebsworth.com
+    appsTlsSecret: dh-wildcard-apps-render-test-tls
+    buildDeadline: 40m
+    uploads:
+      enabled: true
+      maxBytes: 67108864
+      maxTotalBytes: 134217728
+    existingSecret: dns-hosting-render-test
+  mail:
+    enabled: true
+    apiUrl: http://stalwart.mail.svc.cluster.local:8080
+    hostname: mail.dns.benebsworth.com
+    mxPriority: 10
+    spfInclude: spf.dns.benebsworth.com
+    dmarcPolicy: quarantine
+    reportAddress: dmarc@dns.benebsworth.com
+    mailboxesPerDomain: 5
+    defaultQuotaBytes: 5368709120
+    existingSecret: dns-mail-render-test
+  billing:
+    provider: stripe
+    publicUrl: https://dns.benebsworth.com
+    customerEmail: billing@dns.benebsworth.com
+    existingSecret: dns-billing-render-test
+    webhookRoute:
+      enabled: true
+observability:
+  enabled: true
+  environment: production
+  collector:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+    networkPolicy:
+      enabled: true
+      monitoringNamespaceSelector:
+        kubernetes.io/metadata.name: deephost
+      monitoringPodSelector:
+        app: deephost-prometheus
+  alerts:
+    enabled: true
+nodePortService:
+  enabled: true
+httpRoute:
+  enabled: true
+  acknowledgePublicControlPlane: true
+  hostnames:
+    - dns.benebsworth.com

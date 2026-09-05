@@ -1,0 +1,14 @@
+{{- if and .Values.observability.collector.enabled .Values.observability.collector.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.observability.collector.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 6 }}
+{{- end }}

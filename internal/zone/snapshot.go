@@ -121,6 +121,12 @@ func ValidateSnapshot(values []Zone) error {
 			if !record.Type.Valid() {
 				return fmt.Errorf("zone %q record %q has unsupported type %q", value.Name, record.ID, record.Type)
 			}
+			if !ValidSource(record.Source) {
+				return fmt.Errorf("zone %q record %q has unsupported source %q", value.Name, record.ID, record.Source)
+			}
+			if record.Managed && record.Source != SourceUser {
+				return fmt.Errorf("zone %q record %q is managed and cannot carry a source", value.Name, record.ID)
+			}
 			if record.TTL > 2_147_483_647 {
 				return fmt.Errorf("zone %q record %q has invalid TTL", value.Name, record.ID)
 			}

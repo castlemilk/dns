@@ -54,7 +54,7 @@ func TestRunImportUsesBearerAndBoundedRequest(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	err := run([]string{"import", "--zone", "example.com", "--file", "-", "--mode", "replace", "--dry-run", "--timeout", "7s"},
-		getenv, strings.NewReader("www 60 IN A 192.0.2.1\n"), &stdout, &stderr, factory)
+		getenv, strings.NewReader("www 60 IN A 192.0.2.1\n"), &stdout, &stderr, dependencies{dns: factory})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestRunExportWritesAtomicallyAndDoesNotLogToken(t *testing.T) {
 			}
 			return ""
 		}, strings.NewReader(""), &stdout, &stderr,
-		func(string, time.Duration) dnsv1connect.DNSServiceClient { return fake })
+		dependencies{dns: func(string, time.Duration) dnsv1connect.DNSServiceClient { return fake }})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestRunExportWritesAtomicallyAndDoesNotLogToken(t *testing.T) {
 
 func TestRunRejectsMissingTokenAndNeverIncludesTokenInRemoteError(t *testing.T) {
 	t.Parallel()
-	if err := run([]string{"import", "--zone", "example.com"}, func(string) string { return "" }, strings.NewReader(""), ioDiscard{}, ioDiscard{}, nil); err == nil || !strings.Contains(err.Error(), "DNS_API_BEARER_TOKEN") {
+	if err := run([]string{"import", "--zone", "example.com"}, func(string) string { return "" }, strings.NewReader(""), ioDiscard{}, ioDiscard{}, dependencies{}); err == nil || !strings.Contains(err.Error(), "DNS_API_BEARER_TOKEN") {
 		t.Fatalf("missing token error = %v", err)
 	}
 	const secret = "do-not-print-me"
@@ -122,7 +122,7 @@ func TestRunRejectsMissingTokenAndNeverIncludesTokenInRemoteError(t *testing.T) 
 			return secret
 		}
 		return ""
-	}, strings.NewReader(""), ioDiscard{}, ioDiscard{}, func(string, time.Duration) dnsv1connect.DNSServiceClient { return fake })
+	}, strings.NewReader(""), ioDiscard{}, ioDiscard{}, dependencies{dns: func(string, time.Duration) dnsv1connect.DNSServiceClient { return fake }})
 	if err == nil || strings.Contains(err.Error(), secret) {
 		t.Fatalf("remote error = %v", err)
 	}

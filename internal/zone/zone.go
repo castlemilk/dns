@@ -46,6 +46,26 @@ const (
 	TypeSOA   RecordType = "SOA"
 )
 
+// Record provenance. The zero value is the user source, so records written
+// before provenance existed need no migration and the JSON key is omitted for
+// them — the authority feed therefore stays byte-identical (see
+// internal/snapshot.Build).
+const (
+	SourceUser    = ""
+	SourceHosting = "hosting"
+	SourceMail    = "mail"
+)
+
+// ValidSource reports whether source is one of the three persisted values.
+func ValidSource(source string) bool {
+	switch source {
+	case SourceUser, SourceHosting, SourceMail:
+		return true
+	default:
+		return false
+	}
+}
+
 type Record struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
@@ -55,6 +75,10 @@ type Record struct {
 	Managed   bool       `json:"managed"`
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+	// Source names the engine that owns this record: "" (the user), "hosting"
+	// or "mail". Engine-owned records are refused by UpdateRecord and
+	// DeleteRecord and are only written through ApplyRecordSet.
+	Source string `json:"source,omitempty"`
 }
 
 type Zone struct {
@@ -142,7 +166,25 @@ func normalizeRecord(zoneName, name string, recordType RecordType, ttl uint32, v
 	if err := validateWireRecord(rr); err != nil {
 		return Record{}, &ValidationError{Field: "value", Message: err.Error()}
 	}
+	// The stored value has to be the value that is served. The two
+	// character-string types accept input the compiler silently drops — a line
+	// pasted out of a BIND file, `"v=spf1 mx -all" ; do not remove`, puts only
+	// the quoted string on the wire — and a stored value carrying bytes the RR
+	// does not makes the RRset duplicate check, enginedns.TxtText and the raw
+	// zone table all disagree with the resolver. Take the rdata back off the
+	// compiled record so the three agree. rdata is idempotent (re-parsing it
+	// yields the same rendering), which ValidateSnapshot's canonicality
+	// assertion requires.
+	if record.Type == TypeTXT || record.Type == TypeCAA {
+		record.Value = rdata(rr)
+	}
 	return record, nil
+}
+
+// rdata renders a compiled record's value without its owner/TTL/class/type
+// header: what a resolver answers, in zone-file presentation form.
+func rdata(rr dns.RR) string {
+	return strings.TrimPrefix(rr.String(), rr.Header().String())
 }
 
 func (t RecordType) Valid() bool {
@@ -274,7 +316,11 @@ func normalizeValue(zoneName string, record *Record) error {
 		if !strings.HasPrefix(value, "\"") {
 			value = strconv.Quote(value)
 		}
-		record.Value = parts[0] + " " + parts[1] + " " + value
+		// RFC 8659 §4.1 makes the property tag case-insensitive, so `ISSUE` and
+		// `issue` are one record. Storing them as typed would put two identical
+		// properties in one RRset and show the operator a difference that does
+		// not exist.
+		record.Value = parts[0] + " " + strings.ToLower(parts[1]) + " " + value
 	}
 	return nil
 }

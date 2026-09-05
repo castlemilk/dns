@@ -35,11 +35,67 @@ Public DNS exposure is disabled.
 {{- end }}
 
 {{- if .Values.httpRoute.enabled }}
-The UI route sends {{ .Values.httpRoute.apiPathPrefix }} to the bearer-protected
-control API and / to the web UI. It does not expose the snapshot endpoint.
+The UI route sends every Connect service prefix to the bearer-protected control
+API and / to the web UI. It does not expose the snapshot endpoint, the platform
+backup route, or GET /public/v1/plan (the web pod reads that one in-cluster).
+{{- range (include "dns.apiPathPrefixes" . | fromYamlArray) }}
+  {{ . }}
+{{- end }}
+{{- if and .Values.platform.hosting.enabled .Values.platform.hosting.uploads.enabled }}
+  /hosting/v1/uploads (request timeout 10m)
+{{- end }}
+{{- if .Values.platform.billing.webhookRoute.enabled }}
+  /billing/v1/stripe/webhook (exact match, no bearer, signature-verified)
+{{- end }}
 {{- else }}
 The UI/control HTTPRoute is disabled.
 {{- end }}
+
+Platform state:
+  {{ .Values.platform.storePath }} on the control volume, {{ .Values.platform.activity.maxEvents }} retained activity events.
+  Back it up with GET /internal/v1/platform-backup (snapshot bearer token) or
+  `dnsctl platform-backup`; see docs/platform-runbook.md.
+
+Engines:
+{{- if .Values.platform.hosting.enabled }}
+  hosting: enabled, tenant {{ .Values.platform.hosting.tenant }}, token from Secret/{{ .Values.platform.hosting.existingSecret }} key {{ .Values.platform.hosting.apiTokenKey }}
+{{- else }}
+  hosting: not configured (the console shows the missing variable names)
+{{- end }}
+{{- if .Values.platform.mail.enabled }}
+  mail:    enabled, hostname {{ .Values.platform.mail.hostname }}, API key from Secret/{{ .Values.platform.mail.existingSecret }} key {{ .Values.platform.mail.apiTokenKey }}
+{{- else }}
+  mail:    not configured (the console shows the missing variable names)
+{{- end }}
+{{- if .Values.platform.billing.provider }}
+  billing: {{ .Values.platform.billing.provider }}, keys from Secret/{{ .Values.platform.billing.existingSecret }}
+{{- else }}
+  billing: not configured (the console shows the missing variable names)
+{{- end }}
+
+{{- if or .Values.platform.hosting.enabled .Values.platform.mail.enabled .Values.platform.billing.provider }}
+The chart creates none of those Secrets. Restart the control Deployment after
+changing any of their values.
+{{- end }}
+
+{{- if .Values.platform.billing.provider }}
+
+Stripe webhook endpoint:
+{{- if .Values.platform.billing.webhookRoute.enabled }}
+  {{ .Values.platform.billing.publicUrl }}/billing/v1/stripe/webhook
+{{- else }}
+  Set platform.billing.webhookRoute.enabled=true to route
+  {{ .Values.platform.billing.publicUrl }}/billing/v1/stripe/webhook.
+{{- end }}
+  Register it with API version 2026-08-26.dahlia — the version the pinned
+  stripe-go SDK sends. An event signed for another release train is rejected.
+
+Rotating the signing secret without downtime:
+  1. Add the new whsec_ secret to Secret/{{ .Values.platform.billing.existingSecret }} key {{ .Values.platform.billing.webhookSecretKey }}
+     as a comma-separated list, newest first (at most three).
+  2. Restart the control Deployment; both secrets now verify.
+  3. Remove the old secret from the list after 24 hours and restart again.
+{{ end }}
 
 {{- if .Values.snapshotRoute.enabled }}
 The separate snapshot route exposes only the exact /internal/v1/snapshot path at

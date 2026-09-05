@@ -25,5 +25,20 @@ authority:
   cache:
     persistence:
       storageClass: vultr-block-storage-retain
+observability:
+  enabled: true
+  environment: production
+  collector:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+    networkPolicy:
+      enabled: true
+      monitoringNamespaceSelector:
+        kubernetes.io/metadata.name: deephost
+      monitoringPodSelector:
+        app: deephost-prometheus
+  alerts:
+    enabled: true
 nodePortService:
   enabled: true

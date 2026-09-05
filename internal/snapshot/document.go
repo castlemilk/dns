@@ -12,11 +12,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/castlemilk/dns/internal/authoritative"
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 )
 
@@ -50,6 +52,7 @@ type FeedHandler struct {
 	maxBytes   int64
 	production bool
 	now        func() time.Time
+	metrics    *telemetry.Metrics
 
 	mu          sync.Mutex
 	contentHash [sha256.Size]byte
@@ -59,7 +62,7 @@ type FeedHandler struct {
 	cachedAt    time.Time
 }
 
-func NewFeedHandler(source ZoneLister, logger *slog.Logger, maxBytes int64, production bool) *FeedHandler {
+func NewFeedHandler(source ZoneLister, logger *slog.Logger, maxBytes int64, production bool, metricSets ...*telemetry.Metrics) *FeedHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -69,6 +72,7 @@ func NewFeedHandler(source ZoneLister, logger *slog.Logger, maxBytes int64, prod
 		maxBytes:   maxBytes,
 		production: production,
 		now:        time.Now,
+		metrics:    telemetry.Select(metricSets...),
 	}
 }
 
@@ -78,19 +82,42 @@ func (h *FeedHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	started := time.Time{}
+	if h.metrics.MetricsEnabled() {
+		started = time.Now()
+	}
+	outcome := "success"
+	cacheResult := "none"
+	size := -1
+	defer func() {
+		elapsed := time.Duration(0)
+		if !started.IsZero() {
+			elapsed = time.Since(started)
+		}
+		h.metrics.SnapshotBuild(request.Context(), outcome, cacheResult, elapsed, size)
+	}()
 	values, err := h.source.List(request.Context())
 	if err != nil {
+		outcome = "list_error"
 		h.logger.Error("list zones for snapshot", "error", err)
 		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	raw, etag, err := h.snapshot(values)
+	raw, etag, cached, err := h.snapshot(values)
 	if err != nil {
+		outcome = "build_error"
 		h.logger.Error("build zone snapshot", "error", err)
 		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	size = len(raw)
+	if cached {
+		cacheResult = "hit"
+	} else {
+		cacheResult = "miss"
+	}
 	if h.maxBytes <= 0 || int64(len(raw)) > h.maxBytes {
+		outcome = "oversize"
 		h.logger.Error("zone snapshot exceeds configured limit", "bytes", len(raw), "limit", h.maxBytes)
 		http.Error(writer, "snapshot unavailable", http.StatusServiceUnavailable)
 		return
@@ -109,17 +136,18 @@ func (h *FeedHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func (h *FeedHandler) snapshot(values []zone.Zone) ([]byte, string, error) {
+func (h *FeedHandler) snapshot(values []zone.Zone) ([]byte, string, bool, error) {
+	values = stripSources(values)
 	content, err := json.Marshal(values)
 	if err != nil {
-		return nil, "", fmt.Errorf("encode zone snapshot content: %w", err)
+		return nil, "", false, fmt.Errorf("encode zone snapshot content: %w", err)
 	}
 	digest := sha256.Sum256(content)
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.hasCached && digest == h.contentHash {
-		return h.cachedRaw, h.cachedETag, nil
+		return h.cachedRaw, h.cachedETag, true, nil
 	}
 	generatedAt := h.now().UTC()
 	if h.hasCached && !generatedAt.After(h.cachedAt) {
@@ -127,14 +155,14 @@ func (h *FeedHandler) snapshot(values []zone.Zone) ([]byte, string, error) {
 	}
 	raw, document, err := Build(values, generatedAt, h.production)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	h.contentHash = digest
 	h.hasCached = true
 	h.cachedRaw = raw
 	h.cachedETag = `"sha256:` + document.Checksum + `"`
 	h.cachedAt = document.GeneratedAt
-	return h.cachedRaw, h.cachedETag, nil
+	return h.cachedRaw, h.cachedETag, false, nil
 }
 
 func matchesETag(header, etag string) bool {
@@ -147,10 +175,42 @@ func matchesETag(header, etag string) bool {
 	return false
 }
 
+// stripSources returns values with every record's provenance cleared. Record
+// provenance is a control-plane concept: the authoritative servers do not need
+// it and their decoder rejects unknown fields, so the feed must stay
+// byte-identical to the format they already accept. Provenance is
+// re-established by the engine reconcilers after a restore, not by the feed.
+func stripSources(values []zone.Zone) []zone.Zone {
+	sourced := false
+	for _, value := range values {
+		for _, record := range value.Records {
+			if record.Source != zone.SourceUser {
+				sourced = true
+				break
+			}
+		}
+		if sourced {
+			break
+		}
+	}
+	if !sourced {
+		return values
+	}
+	stripped := slices.Clone(values)
+	for zoneIndex := range stripped {
+		stripped[zoneIndex].Records = slices.Clone(stripped[zoneIndex].Records)
+		for recordIndex := range stripped[zoneIndex].Records {
+			stripped[zoneIndex].Records[recordIndex].Source = zone.SourceUser
+		}
+	}
+	return stripped
+}
+
 func Build(values []zone.Zone, generatedAt time.Time, production bool) ([]byte, Document, error) {
 	if generatedAt.IsZero() {
 		return nil, Document{}, errors.New("snapshot generation time is required")
 	}
+	values = stripSources(values)
 	if production {
 		if err := ValidateProductionNameservers(values); err != nil {
 			return nil, Document{}, err

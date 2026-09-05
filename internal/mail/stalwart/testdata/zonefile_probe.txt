@@ -1,0 +1,22 @@
+v1-ed25519-20260903._domainkey.probe.test. IN TXT "v=DKIM1; k=ed25519; h=sha256; p=5t9iUKLc7NJ5SmfF8N9DBNAn74vuywt3j5mCnUDQmCM="
+v1-rsa-20260903._domainkey.probe.test. IN TXT (
+    "v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwS6eGK8srmBUElDQbZiWywz6WPZL1cDihRY9rzl7t7+VLT8WyNbTykd45GxHJ5iojuk2cUlkwQ2zSJLoX7BKp/O3HtoHW/KmSz6Xt8FRlMPn0gN9GAjuHL6oHGEn/YwN6v7glNBtGmlmjEwUxvrZs/NmtWL7rXIWQG5CiC8Qz4JodQRApilp+sP"
+    "yIJd60baX2lnbonM4CdGZ5TLerMixoy45Z2NSLLuVe3X5WtmVziz7p/fGCDmC/HvUAKtFY+O/i66x7dYas5OE/uhl2XOJTD6rYetEiXzD9RCiRpGqcDclVvNcg8FF08YL3zW2hJ0bMGZMfucSeH03NMJOOxH41wIDAQAB"
+)
+probe.test. IN TXT "v=spf1 mx -all"
+probe.test. IN MX 10 mail.local.test.
+_dmarc.probe.test. IN TXT "v=DMARC1; p=reject; rua=mailto:postmaster@probe.test"
+_caldavs._tcp.probe.test. IN SRV 0 1 443 mail.local.test.
+_carddavs._tcp.probe.test. IN SRV 0 1 443 mail.local.test.
+_imaps._tcp.probe.test. IN SRV 0 1 993 mail.local.test.
+_jmap._tcp.probe.test. IN SRV 0 1 443 mail.local.test.
+_pop3s._tcp.probe.test. IN SRV 0 1 995 mail.local.test.
+_submissions._tcp.probe.test. IN SRV 0 1 465 mail.local.test.
+mta-sts.probe.test. IN CNAME mail.local.test.
+_mta-sts.probe.test. IN TXT "v=STSv1; id=4966920683339627112"
+_smtp._tls.probe.test. IN TXT "v=TLSRPTv1; rua=mailto:postmaster@probe.test"
+ua-auto-config.probe.test. IN CNAME mail.local.test.
+_ua-auto-config.probe.test. IN TXT "v=UAAC1; a=sha256; d=ChkkELbHwgcLV5jhN3d6hfEbPq1fXmI1kESn0hHLMgc="
+autoconfig.probe.test. IN CNAME mail.local.test.
+autodiscover.probe.test. IN CNAME mail.local.test.
+mail.local.test. IN TXT "v=spf1 a -all"

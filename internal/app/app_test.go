@@ -19,8 +19,12 @@ import (
 	"github.com/castlemilk/dns/internal/config"
 	"github.com/castlemilk/dns/internal/control"
 	"github.com/castlemilk/dns/internal/snapshot"
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 	"github.com/miekg/dns"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestServeListenersImmediateCancellation(t *testing.T) {
@@ -134,13 +138,17 @@ func TestCORS(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		origin      string
-		host        string
-		configured  []string
-		wantStatus  int
-		wantAllowed string
-		wantHandled bool
+		name string
+		// scheme is the URL the request is built against: "https" gives it a
+		// TLS state, "http" a plaintext listener.
+		scheme         string
+		forwardedProto string
+		origin         string
+		host           string
+		configured     []string
+		wantStatus     int
+		wantAllowed    string
+		wantHandled    bool
 	}{
 		{
 			name: "request without origin", host: "dns.example.com",
@@ -159,6 +167,29 @@ func TestCORS(t *testing.T) {
 			name: "untrusted origin", origin: "https://attacker.example", host: "dns.example.com",
 			wantStatus: http.StatusForbidden, wantHandled: false,
 		},
+		// The same-origin fallback compares the scheme too. A plaintext
+		// surface answering on the console's own hostname — a gateway
+		// listener replying before the HTTP→HTTPS redirect, or an on-path
+		// attacker — is a different origin and gets nothing.
+		{
+			name: "plaintext origin on a TLS listener", origin: "http://dns.example.com", host: "dns.example.com",
+			wantStatus: http.StatusForbidden, wantHandled: false,
+		},
+		{
+			name: "plaintext origin behind a TLS gateway", scheme: "http", forwardedProto: "https",
+			origin: "http://dns.example.com", host: "dns.example.com",
+			wantStatus: http.StatusForbidden, wantHandled: false,
+		},
+		{
+			name: "same origin behind a TLS gateway", scheme: "http", forwardedProto: "https, http",
+			origin: "https://dns.example.com", host: "dns.example.com",
+			wantStatus: http.StatusNoContent, wantAllowed: "https://dns.example.com", wantHandled: true,
+		},
+		{
+			name: "same origin on a plaintext development listener", scheme: "http",
+			origin: "http://127.0.0.1:8080", host: "127.0.0.1:8080",
+			wantStatus: http.StatusNoContent, wantAllowed: "http://127.0.0.1:8080", wantHandled: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -169,10 +200,17 @@ func TestCORS(t *testing.T) {
 				handled = true
 				writer.WriteHeader(http.StatusNoContent)
 			}), tt.configured)
-			request := httptest.NewRequest(http.MethodPost, "https://"+tt.host+"/dns.v1.DNSService/ListZones", nil)
+			scheme := tt.scheme
+			if scheme == "" {
+				scheme = "https"
+			}
+			request := httptest.NewRequest(http.MethodPost, scheme+"://"+tt.host+"/dns.v1.DNSService/ListZones", nil)
 			request.Host = tt.host
 			if tt.origin != "" {
 				request.Header.Set("Origin", tt.origin)
+			}
+			if tt.forwardedProto != "" {
+				request.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
 			}
 			response := httptest.NewRecorder()
 
@@ -263,6 +301,7 @@ func TestHTTPRoutesKeepHealthPublicAndTokensSeparate(t *testing.T) {
 		feed,
 		nil,
 		nil,
+		nil,
 		"api-secret",
 		"snapshot-secret",
 		1024,
@@ -314,11 +353,11 @@ func TestControlAPIUsesOnlyAPIToken(t *testing.T) {
 		}
 	})
 	dnsServer := authoritative.New(nil, authoritative.DefaultMaxUDPSize)
-	controlHandler := control.NewHandler(store, dnsServer, nil, time.Now())
+	controlHandler := control.NewHandler(store, dnsServer, nil, time.Now(), nil)
 	if err := controlHandler.Reload(context.Background()); err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
-	handler := newHTTPHandler(controlHandler, nil, nil, nil, "api-secret", "snapshot-secret", 1024, nil)
+	handler := newHTTPHandler(controlHandler, nil, nil, nil, nil, "api-secret", "snapshot-secret", 1024, nil)
 
 	tests := []struct {
 		name  string
@@ -366,7 +405,7 @@ func TestControlSnapshotToAuthorityIntegration(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	feed := snapshot.NewFeedHandler(store, nil, 1<<20, false)
-	controlHTTP := newHTTPHandler(nil, feed, nil, nil, "api-secret", "snapshot-secret", 1<<20, nil)
+	controlHTTP := newHTTPHandler(nil, feed, nil, nil, nil, "api-secret", "snapshot-secret", 1<<20, nil)
 	client := &http.Client{Transport: handlerRoundTripper{handler: controlHTTP}}
 
 	authority := authoritative.New(nil, authoritative.DefaultMaxUDPSize)
@@ -454,6 +493,76 @@ func TestRunWriterRejectsSnapshotLimitBeforeListening(t *testing.T) {
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "aggregate snapshot") {
 		t.Fatalf("Run error = %v", err)
+	}
+}
+
+func TestHTTPInstrumentationRecordsAuthAudienceAndBoundedRoute(t *testing.T) {
+	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown meter provider: %v", err)
+		}
+	})
+	metrics, err := telemetry.NewMetrics(provider.Meter("app-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	handler := newHTTPHandler(
+		nil,
+		http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusNoContent) }),
+		nil,
+		nil,
+		nil,
+		"api-secret",
+		"snapshot-secret",
+		1024,
+		nil,
+		metrics,
+	)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://authority.test/internal/v1/snapshot", nil))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", response.Code)
+	}
+
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	auth := appMetric(collected, "simpledns.http.auth.failures")
+	authSum, ok := auth.Data.(metricdata.Sum[int64])
+	if !ok || len(authSum.DataPoints) != 1 {
+		t.Fatalf("auth metric = %#v", auth.Data)
+	}
+	assertAppAttribute(t, authSum.DataPoints[0].Attributes, "auth.audience", "snapshot")
+	assertAppAttribute(t, authSum.DataPoints[0].Attributes, "auth.reason", "missing")
+	httpRequests := appMetric(collected, "simpledns.http.server.requests")
+	httpSum, ok := httpRequests.Data.(metricdata.Sum[int64])
+	if !ok || len(httpSum.DataPoints) != 1 {
+		t.Fatalf("HTTP metric = %#v", httpRequests.Data)
+	}
+	assertAppAttribute(t, httpSum.DataPoints[0].Attributes, "http.route", "/internal/v1/snapshot")
+}
+
+func appMetric(collected metricdata.ResourceMetrics, name string) *metricdata.Metrics {
+	for scopeIndex := range collected.ScopeMetrics {
+		for metricIndex := range collected.ScopeMetrics[scopeIndex].Metrics {
+			value := &collected.ScopeMetrics[scopeIndex].Metrics[metricIndex]
+			if value.Name == name {
+				return value
+			}
+		}
+	}
+	return &metricdata.Metrics{}
+}
+
+func assertAppAttribute(t *testing.T, attributes attribute.Set, key, want string) {
+	t.Helper()
+	value, ok := attributes.Value(attribute.Key(key))
+	if !ok || value.AsString() != want {
+		t.Errorf("attribute %s = %q, %t; want %q", key, value.AsString(), ok, want)
 	}
 }
 

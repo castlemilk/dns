@@ -118,7 +118,7 @@ func TestHandlerValidation(t *testing.T) {
 func TestPublicErrorCodes(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler(nil, nil, discardLogger(), time.Time{})
+	handler := NewHandler(nil, nil, discardLogger(), time.Time{}, nil)
 	tests := []struct {
 		name string
 		err  error
@@ -171,7 +171,7 @@ func TestControlOnlyHandlerValidatesWithoutDNSPublisher(t *testing.T) {
 			t.Errorf("close store: %v", err)
 		}
 	})
-	handler := NewHandler(store, nil, discardLogger(), time.Unix(1_800_000_000, 0))
+	handler := NewHandler(store, nil, discardLogger(), time.Unix(1_800_000_000, 0), nil)
 	ctx := context.Background()
 	created, err := handler.CreateZone(ctx, connect.NewRequest(&dnsv1.CreateZoneRequest{Name: "control.test"}))
 	if err != nil {
@@ -281,7 +281,7 @@ func newTestHandler(t *testing.T) (*Handler, *authoritative.Server, *zone.Store)
 		}
 	})
 	dnsServer := authoritative.New(discardLogger(), authoritative.DefaultMaxUDPSize)
-	handler := NewHandler(store, dnsServer, discardLogger(), time.Unix(1_800_000_000, 0))
+	handler := NewHandler(store, dnsServer, discardLogger(), time.Unix(1_800_000_000, 0), nil)
 	return handler, dnsServer, store
 }
 

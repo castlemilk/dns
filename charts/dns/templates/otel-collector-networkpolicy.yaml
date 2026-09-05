@@ -1,0 +1,42 @@
+{{- if and .Values.observability.collector.enabled .Values.observability.collector.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "dns.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [control, authority, web]
+      ports:
+        - port: otlp-grpc
+          protocol: TCP
+        - port: otlp-http
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.observability.collector.networkPolicy.monitoringNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.observability.collector.networkPolicy.monitoringPodSelector | nindent 14 }}
+      ports:
+        - port: telemetry
+          protocol: TCP
+        - port: prometheus
+          protocol: TCP
+{{- end }}

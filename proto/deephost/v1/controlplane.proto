@@ -1,0 +1,364 @@
+syntax = "proto3";
+
+package deephost.v1;
+
+import "deephost/v1/model.proto";
+
+option go_package = "github.com/benebsworth/deephost/gen/go/deephost/v1;deephostv1";
+
+// ControlPlane is the public API used by the CLI and dashboard. All state is
+// stored as Kubernetes custom resources — the API server is the database.
+service ControlPlaneService {
+  rpc CreateApp(CreateAppRequest) returns (CreateAppResponse);
+  rpc UpdateApp(UpdateAppRequest) returns (UpdateAppResponse);
+  rpc GetApp(GetAppRequest) returns (GetAppResponse);
+  rpc ListApps(ListAppsRequest) returns (ListAppsResponse);
+  rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse);
+
+  // Deploy uploads an artifact tarball streamed from the CLI and creates a
+  // Build + Release. The build pipeline validates and promotes it.
+  rpc Deploy(stream DeployChunk) returns (DeployResponse);
+  rpc CreateGitBuild(CreateGitBuildRequest) returns (CreateGitBuildResponse);
+
+  rpc GetBuild(GetBuildRequest) returns (GetBuildResponse);
+  rpc GetBuildLogs(GetBuildLogsRequest) returns (GetBuildLogsResponse);
+  rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+  rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse);
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+  rpc PromoteRelease(PromoteReleaseRequest) returns (PromoteReleaseResponse);
+
+  rpc CreateDomain(CreateDomainRequest) returns (CreateDomainResponse);
+  rpc ListDomains(ListDomainsRequest) returns (ListDomainsResponse);
+  rpc DeleteDomain(DeleteDomainRequest) returns (DeleteDomainResponse);
+
+  // Runtime environment variables. Values are write-only: they are stored in
+  // the app's managed Kubernetes Secret and are never returned by any RPC.
+  rpc SetAppEnvVar(SetAppEnvVarRequest) returns (SetAppEnvVarResponse);
+  rpc DeleteAppEnvVar(DeleteAppEnvVarRequest) returns (DeleteAppEnvVarResponse);
+  rpc ListAppEnvVars(ListAppEnvVarsRequest) returns (ListAppEnvVarsResponse);
+}
+
+message CreateAppRequest {
+  string tenant = 1;
+  string name = 2;
+  Framework framework = 3;
+  repeated string domains = 4;
+  Scaling scaling = 5;
+  Isolation isolation = 6;
+  map<string, string> env = 7;
+  repeated EnvSecretRef env_secrets = 8;
+  string display_name = 9;
+  string description = 10;
+  string repository = 11;
+  string production_branch = 12;
+  BuildSettings build_settings = 13;
+}
+
+message CreateAppResponse {
+  string tenant = 1;
+  string name = 2;
+}
+
+message UpdateAppRequest {
+  string tenant = 1;
+  string name = 2;
+  optional string display_name = 3;
+  optional string description = 4;
+  optional string repository = 5;
+  optional string production_branch = 6;
+  BuildSettings build_settings = 7;
+}
+
+message UpdateAppResponse {
+  AppView app = 1;
+}
+
+message GetAppRequest {
+  string tenant = 1;
+  string name = 2;
+}
+
+message AppView {
+  string tenant = 1;
+  string name = 2;
+  Framework framework = 3;
+  repeated string domains = 4;
+  Scaling scaling = 5;
+  Isolation isolation = 6;
+  string latest_release = 7;
+  bool ready = 8;
+  repeated EnvSecretRef env_secrets = 9;
+  string display_name = 10;
+  string description = 11;
+  string repository = 12;
+  string production_branch = 13;
+  BuildSettings build_settings = 14;
+}
+
+message GetAppResponse {
+  AppView app = 1;
+}
+
+message ListAppsRequest {
+  string tenant = 1;
+}
+
+message ListAppsResponse {
+  repeated AppView apps = 1;
+}
+
+message DeleteAppRequest {
+  string tenant = 1;
+  string name = 2;
+}
+
+message DeleteAppResponse {}
+
+message DeployChunk {
+  oneof payload {
+    // First frame: deployment metadata.
+    DeployStart start = 1;
+    // Subsequent frames: raw tar.zst bytes.
+    bytes data = 2;
+  }
+}
+
+message DeployStart {
+  string tenant = 1;
+  string name = 2;
+  Framework framework = 3;
+  string environment = 4;
+  repeated EnvSecretRef env_secrets = 5;
+}
+
+message DeployResponse {
+  string build_id = 1;
+  string release_id = 2;
+  string artifact_key = 3;
+}
+
+// CreateGitBuild starts a build from a Git repository. git_token is accepted
+// only by the authenticated control plane and is stored in a short-lived
+// Kubernetes Secret for the builder Job; it is never returned.
+message CreateGitBuildRequest {
+  string tenant = 1;
+  string app = 2;
+  Framework framework = 3;
+  GitSource source = 4;
+  string git_token = 5;
+  string environment = 6;
+}
+
+message CreateGitBuildResponse {
+  string build_id = 1;
+}
+
+message GetBuildRequest {
+  string tenant = 1;
+  string app = 2;
+  string build_id = 3;
+}
+
+message BuildView {
+  string id = 1;
+  string phase = 2; // Pending|Building|Succeeded|Failed
+  string artifact_key = 3;
+  string release_id = 4;
+  string reason = 5;
+  // metadata.creationTimestamp of the Build CR.
+  int64 created_unix_ms = 6;
+  // status.startedAt, stamped by the operator when the build starts building.
+  int64 started_unix_ms = 7;
+  // status.finishedAt, stamped by the operator on Succeeded or Failed.
+  int64 finished_unix_ms = 8;
+  // spec.source.git.revision as requested; empty for uploaded artifacts.
+  string revision = 9;
+  // spec.source.git.repoUrl; empty for uploaded artifacts.
+  string repo_url = 10;
+  // Normalized environment of the build.
+  string environment = 11;
+}
+
+message GetBuildResponse {
+  BuildView build = 1;
+}
+
+// GetBuildLogsRequest reads a bounded tail from the builder container. A zero
+// tail_lines uses the server default; the server caps requests at 1,000 lines
+// and 256 KiB.
+message GetBuildLogsRequest {
+  string tenant = 1;
+  string app = 2;
+  string build_id = 3;
+  int32 tail_lines = 4;
+}
+
+message GetBuildLogsResponse {
+  repeated string lines = 1;
+  // False means the build is still running or the bounded response was cut.
+  bool complete = 2;
+}
+
+// GetMetricsRequest accepts only the server's fixed component/metric allowlist.
+// It never accepts raw PromQL from clients.
+message GetMetricsRequest {
+  string tenant = 1;
+  string component = 2;
+  string metric = 3;
+}
+
+message MetricView {
+  string component = 1;
+  string metric = 2;
+  double value = 3;
+  int64 timestamp_unix_ms = 4;
+  bool available = 5;
+}
+
+message GetMetricsResponse {
+  MetricView metric = 1;
+}
+
+// ListBuildsRequest lists Build CRs for one app, newest first.
+message ListBuildsRequest {
+  string tenant = 1;
+  string app = 2;
+  // Zero uses the server default of 50; the server caps requests at 200.
+  int32 limit = 3;
+}
+
+message ListBuildsResponse {
+  repeated BuildView builds = 1;
+}
+
+message ListReleasesRequest {
+  string tenant = 1;
+  string app = 2;
+}
+
+message ReleaseView {
+  string id = 1;
+  string build_id = 2;
+  string artifact_key = 3;
+  Framework framework = 4;
+  bool ready = 5;
+  int32 traffic_weight = 6;
+  string git_sha = 7;
+  string environment = 8;
+  // metadata.creationTimestamp of the Release CR.
+  int64 created_unix_ms = 9;
+}
+
+message ListReleasesResponse {
+  repeated ReleaseView releases = 1;
+}
+
+message PromoteReleaseRequest {
+  string tenant = 1;
+  string app = 2;
+  string release_id = 3;
+}
+
+message PromoteReleaseResponse {}
+
+message CreateDomainRequest {
+  string tenant = 1;
+  string app = 2;
+  string host = 3;
+  // Optional: existing TLS secret covering the host (shared wildcard mode).
+  // When set, no per-host certificate is issued.
+  string tls_secret = 4;
+  // Optional: when set, this host is served as a permanent (301) redirect to
+  // redirect_to instead of being routed to the app. The host still needs its
+  // own certificate; it is not added to the router's hostname map. Empty keeps
+  // the existing behaviour of serving the app on this host.
+  string redirect_to = 5;
+}
+
+message CreateDomainResponse {}
+
+message ListDomainsRequest {
+  string tenant = 1;
+  string app = 2;
+}
+
+message DomainView {
+  string host = 1;
+  string app = 2;
+  // True from any server that reports the readiness fields below.
+  bool readiness_reported = 3;
+  // Domain.status.ready: the ingress objects were applied.
+  bool ready = 4;
+  string tls_mode = 5; // issued|shared|none
+  // cert-manager Certificate Ready condition; false unless tls_mode is issued.
+  bool certificate_ready = 6;
+  // Why the certificate is not ready; empty otherwise.
+  string reason = 7;
+  // Domain.spec.redirectTo: the host this one 301-redirects to. Empty means
+  // the host serves the app.
+  string redirect_to = 8;
+}
+
+message ListDomainsResponse {
+  repeated DomainView domains = 1;
+}
+
+// DeleteDomainRequest removes one host from an app: the Domain CR is deleted
+// (its finalizer cleans routes and certificates) and the host is removed from
+// App.spec.domains.
+message DeleteDomainRequest {
+  string tenant = 1;
+  string app = 2;
+  string host = 3;
+}
+
+message DeleteDomainResponse {}
+
+// EnvVarView describes one runtime environment variable. It never carries the
+// value: SetAppEnvVar is the only way to write one, and nothing reads one back.
+message EnvVarView {
+  // Process environment variable name.
+  string name = 1;
+  // production, preview, or development.
+  string environment = 2;
+  // When the value was last written, from the managed Secret's annotation.
+  // Zero means the platform has no record (e.g. a hand-made Secret reference).
+  int64 last_set_unix_ms = 3;
+}
+
+// SetAppEnvVarRequest creates or replaces one variable in the app's managed
+// Secret. The value is write-only: it is never returned, logged, or recorded
+// in an event.
+message SetAppEnvVarRequest {
+  string tenant = 1;
+  string app = 2;
+  string name = 3;
+  string value = 4;
+  // Empty defaults to production.
+  string environment = 5;
+}
+
+message SetAppEnvVarResponse {
+  EnvVarView variable = 1;
+}
+
+message DeleteAppEnvVarRequest {
+  string tenant = 1;
+  string app = 2;
+  string name = 3;
+  // Empty defaults to production.
+  string environment = 4;
+}
+
+message DeleteAppEnvVarResponse {}
+
+message ListAppEnvVarsRequest {
+  string tenant = 1;
+  string app = 2;
+  // Optional filter; empty returns every environment.
+  string environment = 3;
+}
+
+message ListAppEnvVarsResponse {
+  repeated EnvVarView variables = 1;
+}

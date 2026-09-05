@@ -1,0 +1,45 @@
+{
+  "methodResponses": [
+    [
+      "x:DkimSignature/query",
+      {
+        "accountId": "c",
+        "queryState": "n",
+        "canCalculateChanges": true,
+        "position": 0,
+        "ids": [
+          "jc7331anktaa",
+          "jc73307hksqa"
+        ]
+      },
+      "0"
+    ],
+    [
+      "x:DkimSignature/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "selector": "v1-rsa-20260903",
+            "createdAt": "2026-09-03T08:52:28Z",
+            "stage": "active",
+            "@type": "Dkim1RsaSha256",
+            "publicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwS6eGK8srmBUElDQbZiWywz6WPZL1cDihRY9rzl7t7+VLT8WyNbTykd45GxHJ5iojuk2cUlkwQ2zSJLoX7BKp/O3HtoHW/KmSz6Xt8FRlMPn0gN9GAjuHL6oHGEn/YwN6v7glNBtGmlmjEwUxvrZs/NmtWL7rXIWQG5CiC8Qz4JodQRApilp+sPyIJd60baX2lnbonM4CdGZ5TLerMixoy45Z2NSLLuVe3X5WtmVziz7p/fGCDmC/HvUAKtFY+O/i66x7dYas5OE/uhl2XOJTD6rYetEiXzD9RCiRpGqcDclVvNcg8FF08YL3zW2hJ0bMGZMfucSeH03NMJOOxH41wIDAQAB",
+            "id": "jc7331anktaa"
+          },
+          {
+            "selector": "v1-ed25519-20260903",
+            "createdAt": "2026-09-03T08:52:28Z",
+            "stage": "active",
+            "@type": "Dkim1Ed25519Sha256",
+            "publicKey": "5t9iUKLc7NJ5SmfF8N9DBNAn74vuywt3j5mCnUDQmCM=",
+            "id": "jc73307hksqa"
+          }
+        ],
+        "notFound": []
+      },
+      "1"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

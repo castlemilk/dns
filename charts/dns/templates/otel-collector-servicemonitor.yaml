@@ -1,0 +1,30 @@
+{{- if and .Values.observability.collector.enabled .Values.observability.collector.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- with .Values.observability.collector.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "otel-metrics") | nindent 6 }}
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: {{ .Values.observability.collector.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.observability.collector.serviceMonitor.scrapeTimeout }}
+      honorLabels: false
+    - port: telemetry
+      path: /metrics
+      interval: {{ .Values.observability.collector.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.observability.collector.serviceMonitor.scrapeTimeout }}
+      honorLabels: false
+{{- end }}

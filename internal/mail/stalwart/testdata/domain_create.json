@@ -1,0 +1,17 @@
+{
+  "methodResponses": [
+    [
+      "x:Domain/set",
+      {
+        "accountId": "c",
+        "created": {
+          "d1": {
+            "id": "c"
+          }
+        }
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

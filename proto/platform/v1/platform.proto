@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package platform.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service PlatformService {
+  rpc GetPlatformStatus(GetPlatformStatusRequest) returns (GetPlatformStatusResponse) {}
+  // Reconstructs sites, mail domains and subscriptions from the engines after platform.db was lost.
+  // Runs inside the control plane (engine credentials never leave the pod); refused unless the
+  // sites, mail_domains and subscriptions buckets are all empty.
+  rpc RebuildPlatformStore(RebuildPlatformStoreRequest) returns (RebuildPlatformStoreResponse) {}
+}
+
+enum EngineKind {
+  ENGINE_KIND_UNSPECIFIED = 0;
+  ENGINE_KIND_DNS = 1;
+  ENGINE_KIND_HOSTING = 2;
+  ENGINE_KIND_MAIL = 3;
+  ENGINE_KIND_BILLING = 4;
+}
+
+message EngineStatus {
+  EngineKind kind = 1;
+  bool configured = 2;                 // config block complete and valid at start
+  bool reachable = 3;                  // last probe succeeded (false when !configured)
+  google.protobuf.Timestamp checked_at = 4;
+  string reason = 5;                   // bounded, redacted probe failure text; "" when reachable
+  repeated string missing_env = 6;     // env NAMES an operator must set when !configured; never values
+  string provider = 7;                 // "simpledns" | "deephost" | "stalwart" | "stripe" | "fake"
+  string endpoint_host = 8;            // host[:port] only; no scheme, path, userinfo
+  map<string, bool> capabilities = 9;  // hosting: list_builds, delete_domain, build_timestamps, domain_readiness, tenant_scoped
+  string version = 10;                 // stalwart edition, stripe api version, "" otherwise
+}
+
+message GetPlatformStatusRequest {
+  bool probe = 1;                      // true = re-probe now (rate-limited to once per 10 s per engine)
+}
+
+message GetPlatformStatusResponse {
+  repeated EngineStatus engines = 1;   // always 4 entries, DNS first
+  repeated string nameservers = 2;     // trailing-dot FQDNs, as in dns.v1.Zone
+  string version = 3;                  // debug.ReadBuildInfo main version, "dev" locally
+  google.protobuf.Timestamp started_at = 4;
+  bool production = 5;
+  bool billing_informational = 6;      // always true in this release
+  uint32 mailboxes_per_domain = 7;     // MAIL_MAILBOXES_PER_DOMAIN (0 when mail is not configured)
+  string platform_store_name = 8;      // basename of DNS_PLATFORM_PATH
+  bool platform_backup_route = 9;      // GET /internal/v1/platform-backup is mounted (snapshot token set)
+}
+
+message RebuildPlatformStoreRequest {
+  bool dry_run = 1;                    // report what would be recreated; write nothing
+}
+
+message RebuildPlatformStoreResponse {
+  uint32 sites = 1;
+  uint32 mail_domains = 2;
+  uint32 subscriptions = 3;
+  repeated string warnings = 4;        // "app simple-acme-dev-1a2b3c has no matching zone", "customer not found by email"
+  bool dry_run = 5;
+}
+
+// A planned or applied change to one DNS record, shared by hosting and mail.
+message RecordChange {
+  string op = 1;                       // "create" | "adopt" | "keep" | "remove" | "replace" | "align"
+  string name = 2;                     // relative owner ("@", "www", "_dmarc", "<sel>._domainkey")
+  string type = 3;                     // "A" | "AAAA" | "CNAME" | "MX" | "TXT"
+  string value = 4;                    // stored form (quoted TXT, trailing-dot targets)
+  uint32 ttl = 5;
+  string record_id = 6;                // existing record affected (adopt/keep/remove/replace/align), "" for create
+  string previous_value = 7;           // replace only
+  string why = 8;                      // "an A record at www prevents the www alias"; align: "TTL 0 → 300 so the RRset accepts new members"
+}

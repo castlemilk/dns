@@ -1,0 +1,6 @@
+# Render-only fixture: an engine credential smuggled in through extraEnv must
+# be refused by both the values schema and the template guard, so a caller
+# cannot shadow the chart-owned HOSTING_API_TOKEN with --skip-schema-validation.
+control:
+  extraEnv:
+    - name: HOSTING_API_TOKEN

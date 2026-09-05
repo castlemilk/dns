@@ -1,0 +1,13 @@
+{
+  "methodResponses": [
+    [
+      "error",
+      {
+        "type": "forbidden",
+        "description": "This feature is only available in the Enterprise edition. Obtain your trial license at https://license.stalw.art/trial."
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

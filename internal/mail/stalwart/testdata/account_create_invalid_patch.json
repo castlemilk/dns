@@ -1,0 +1,19 @@
+{
+  "methodResponses": [
+    [
+      "x:Account/set",
+      {
+        "accountId": "c",
+        "notCreated": {
+          "u1": {
+            "type": "invalidPatch",
+            "description": "Invalid key for object property",
+            "properties": ["quotas"]
+          }
+        }
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "240fbd1a"
+}

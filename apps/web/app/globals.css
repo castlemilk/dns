@@ -7,9 +7,6 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --font-heading: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,6 +36,41 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* design palette additions */
+  --color-page: var(--page);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+  --color-subtle: var(--text-subtle);
+  --color-soft: var(--text-soft);
+  --color-light: var(--text-light);
+  --color-faint: var(--text-faint);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-line-faint: var(--line-faint);
+  --color-line-strong: var(--line-strong);
+  --color-fill: var(--fill);
+  --color-fill-faint: var(--fill-faint);
+  --color-fill-strong: var(--fill-strong);
+  --color-row-hover: var(--row-hover);
+
+  --font-sans:
+    var(--font-plex-sans), "IBM Plex Sans", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:
+    var(--font-plex-mono), "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, "Liberation Mono", monospace;
+  --font-heading: var(--font-sans);
+
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.2;
+  --text-label: 12.5px;
+  --text-label--line-height: 1.4;
+  --text-ui: 13.5px;
+  --text-ui--line-height: 1.5;
+
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,38 +81,55 @@
 }
 
 :root {
-  --background: oklch(0.145 0.008 155);
-  --foreground: oklch(0.955 0.008 155);
-  --card: oklch(0.185 0.009 155);
-  --card-foreground: oklch(0.955 0.008 155);
-  --popover: oklch(0.205 0.01 155);
-  --popover-foreground: oklch(0.955 0.008 155);
-  --primary: oklch(0.86 0.14 154);
-  --primary-foreground: oklch(0.16 0.018 155);
-  --secondary: oklch(0.235 0.012 155);
-  --secondary-foreground: oklch(0.92 0.01 155);
-  --muted: oklch(0.22 0.009 155);
-  --muted-foreground: oklch(0.68 0.018 155);
-  --accent: oklch(0.255 0.024 155);
-  --accent-foreground: oklch(0.92 0.025 155);
-  --destructive: oklch(0.68 0.19 25);
-  --border: oklch(0.31 0.014 155 / 68%);
-  --input: oklch(0.31 0.014 155 / 82%);
-  --ring: oklch(0.78 0.13 154);
-  --chart-1: oklch(0.86 0.14 154);
-  --chart-2: oklch(0.72 0.1 195);
-  --chart-3: oklch(0.72 0.1 90);
-  --chart-4: oklch(0.68 0.12 300);
-  --chart-5: oklch(0.7 0.14 25);
+  --page: #0a0b0e;
+  --background: #0f1115;
+  --foreground: #e8eaed;
+  --card: #12151b;
+  --card-foreground: #e8eaed;
+  --popover: #161a21;
+  --popover-foreground: #e8eaed;
+  --primary: #5b9cff;
+  --primary-foreground: #06101f;
+  --secondary: #1a1d23;
+  --secondary-foreground: #e8eaed;
+  --muted: #171a20;
+  --muted-foreground: #8b919c;
+  --accent: #202225;
+  --accent-foreground: #e8eaed;
+  --destructive: #f87171;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #5b9cff;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --link: #7fb0ff;
+  --link-hover: #a8c8ff;
+  --text-subtle: #a4aab4;
+  --text-soft: #c9ced6;
+  --text-light: #d5d9e0;
+  --text-faint: #6b7280;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-soft: rgba(255, 255, 255, 0.06);
+  --line-faint: rgba(255, 255, 255, 0.05);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --fill: rgba(255, 255, 255, 0.03);
+  --fill-faint: rgba(255, 255, 255, 0.02);
+  --fill-strong: rgba(255, 255, 255, 0.07);
+  --row-hover: rgba(255, 255, 255, 0.025);
+  --chart-1: #5b9cff;
+  --chart-2: #4ade80;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f87171;
   --radius: 0.5rem;
-  --sidebar: oklch(0.165 0.009 155);
-  --sidebar-foreground: oklch(0.955 0.008 155);
-  --sidebar-primary: oklch(0.86 0.14 154);
-  --sidebar-primary-foreground: oklch(0.16 0.018 155);
-  --sidebar-accent: oklch(0.235 0.018 155);
-  --sidebar-accent-foreground: oklch(0.94 0.012 155);
-  --sidebar-border: oklch(0.3 0.013 155 / 65%);
-  --sidebar-ring: oklch(0.78 0.13 154);
+  --sidebar: #0f1115;
+  --sidebar-foreground: #e8eaed;
+  --sidebar-primary: #5b9cff;
+  --sidebar-primary-foreground: #06101f;
+  --sidebar-accent: #202225;
+  --sidebar-accent-foreground: #e8eaed;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-ring: #5b9cff;
 }
 
 .dark {
@@ -88,24 +137,57 @@
 }
 
 @layer base {
+  /* The outline colour every native focus ring inherits (links, <summary>, the
+     file input, anything without an explicit focus-visible style). It is the
+     full-strength ring colour, not a 50% wash: #5b9cff measures 6.9:1 against
+     the page and 6.4:1 against the popover surface, where ring/50 flattened to
+     #35568a and measured 2.6:1 — under the 3:1 WCAG 2.2 SC 1.4.11 asks of a
+     focus indicator. */
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
 
   html {
     @apply font-sans;
+    -webkit-font-smoothing: antialiased;
   }
 
   body {
     @apply bg-background text-foreground;
-    background-image:
-      linear-gradient(to right, color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px);
-    background-size: 32px 32px;
   }
 
   ::selection {
-    background: color-mix(in oklch, var(--primary), transparent 62%);
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
     color: var(--foreground);
   }
+
+  /* Every animation this app writes itself is behind `motion-safe:`, so it is not
+     generated at all under reduced motion. This block is the backstop for CSS that
+     is not ours (a third-party keyframe, a UA smooth scroll) and for anything a
+     future change forgets to gate: it collapses the animation instead of removing
+     it, so an animation whose final keyframe is the resting state still lands
+     there and Radix's presence machinery still sees its `animationend`. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto !important;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-delay: 0ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility eyebrow {
+  @apply font-mono text-2xs font-medium tracking-[0.06em] text-muted-foreground uppercase;
+}
+
+@utility link {
+  @apply text-link hover:text-link-hover;
 }

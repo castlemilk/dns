@@ -33,14 +33,20 @@ spec:
     - server: "*"
       namespace: dns
   kinds:
+    - ConfigMap
     - Deployment
     - StatefulSet
     - Service
     - PersistentVolumeClaim
     - PodDisruptionBudget
+    - NetworkPolicy
     - HTTPRoute
     - Certificate
     - ReferenceGrant
+    # Paprika resolves these CRD GVKs through API discovery using the apiVersion
+    # rendered by the chart; the project allow-list itself is kind-based.
+    - ServiceMonitor
+    - PrometheusRule
 ---
 apiVersion: pipelines.paprika.io/v1alpha1
 kind: Application
@@ -102,6 +108,27 @@ spec:
         cache:
           persistence:
             storageClass: vultr-block-storage-retain
+      observability:
+        enabled: true
+        environment: production
+        collector:
+          enabled: true
+          # The immutable upstream multi-architecture 0.159.0 image index.
+          image:
+            tag: "0.159.0"
+            digest: sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc
+          serviceMonitor:
+            # Kept for operator-compatible Prometheus installations. The
+            # current deephost Prometheus uses endpoint-aware static discovery.
+            enabled: true
+          networkPolicy:
+            enabled: true
+            monitoringNamespaceSelector:
+              kubernetes.io/metadata.name: deephost
+            monitoringPodSelector:
+              app: deephost-prometheus
+        alerts:
+          enabled: true
       httpRoute:
         enabled: true
         acknowledgePublicControlPlane: true

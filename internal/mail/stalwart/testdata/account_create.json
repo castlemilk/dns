@@ -1,0 +1,17 @@
+{
+  "methodResponses": [
+    [
+      "x:Account/set",
+      {
+        "accountId": "c",
+        "created": {
+          "u1": {
+            "id": "d"
+          }
+        }
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "240fbd1a"
+}

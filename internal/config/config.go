@@ -44,6 +44,21 @@ type Config struct {
 	SnapshotHTTPTimeout  time.Duration
 	HTTPMaxBodyBytes     int64
 	SnapshotMaxBodyBytes int64
+
+	// PlatformPath is the bbolt file holding sites, mail bindings,
+	// subscriptions and the event log. It is opened only by writer roles and
+	// never by dns-restore, so the zone store's bucket invariants are
+	// untouched.
+	//
+	// It is a flat field, not a `Platform` sub-struct: spec2 §1.4 and every
+	// call site spell it `cfg.PlatformPath`, and a store path is one value
+	// rather than an engine block with its own all-or-nothing validation.
+	// spec2 §1.8 has been amended to match.
+	PlatformPath string
+	Activity     Activity
+	Hosting      Hosting
+	Mail         Mail
+	Billing      Billing
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -198,7 +213,85 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("DNS_SNAPSHOT_MAX_STALENESS must be at least DNS_SNAPSHOT_POLL_INTERVAL")
 		}
 	}
+
+	if value.Role == RoleAuthority {
+		// An authority is a read-only snapshot consumer. It holds no engine
+		// credential and mounts none of the platform routes, so an engine
+		// variable here is a misconfiguration worth failing on rather than a
+		// value to ignore silently.
+		if err := rejectEngineEnv(getenv, value.Role); err != nil {
+			return Config{}, err
+		}
+		return value, nil
+	}
+
+	value.PlatformPath = envOr(getenv, "DNS_PLATFORM_PATH", filepath.Join(filepath.Dir(dataPath), "platform.db"))
+	if value.PlatformPath == "" {
+		return Config{}, fmt.Errorf("DNS_PLATFORM_PATH cannot be empty for role %s", value.Role)
+	}
+	if filepath.Clean(value.PlatformPath) == filepath.Clean(value.DataPath) {
+		return Config{}, fmt.Errorf("DNS_PLATFORM_PATH must not equal DNS_DATA_PATH")
+	}
+	if filepath.Clean(value.PlatformPath) == filepath.Clean(value.SnapshotCachePath) {
+		return Config{}, fmt.Errorf("DNS_PLATFORM_PATH must not equal DNS_SNAPSHOT_CACHE_PATH")
+	}
+
+	activity, err := loadActivity(getenv)
+	if err != nil {
+		return Config{}, err
+	}
+	value.Activity = activity
+
+	hosting, err := loadHosting(getenv, value.Production)
+	if err != nil {
+		return Config{}, err
+	}
+	value.Hosting = hosting
+
+	mail, err := loadMail(getenv, value.Production)
+	if err != nil {
+		return Config{}, err
+	}
+	value.Mail = mail
+
+	billing, err := loadBilling(getenv, value.Production, value.PlatformPath)
+	if err != nil {
+		return Config{}, err
+	}
+	value.Billing = billing
+
+	// The new services spend engine credentials, return a plaintext mailbox
+	// password once, and destroy apps and mailboxes. An unauthenticated control
+	// API in front of them is not an acceptable local convenience.
+	if value.APIBearerToken == "" && spendsCredentials(value) {
+		return Config{}, fmt.Errorf("DNS_API_BEARER_TOKEN is required when a real hosting or mail engine is configured, or when BILLING_PROVIDER=%s", BillingProviderStripe)
+	}
+	if err := validateUploadDir(value.Hosting, value.DataPath, value.Production); err != nil {
+		return Config{}, err
+	}
 	return value, nil
+}
+
+// RequiresOperatorToken reports whether this configuration may not be served
+// without DNS_API_BEARER_TOKEN. Load already refuses such a configuration; the
+// predicate is exported so the place that mounts the routes can refuse it too,
+// and so the two can never drift apart.
+func RequiresOperatorToken(value Config) bool { return spendsCredentials(value) }
+
+// spendsCredentials reports whether this process can reach something real. The
+// credential being spent is reachability to an engine, not the bearer that
+// happens to authenticate it: HOSTING_API_TOKEN is optional for a loopback or
+// cluster-local DeepHost (loadHosting), and keying on it left a fully live
+// engine — one that creates and destroys apps, and answers on the shared
+// cluster — behind an unauthenticated control API.
+func spendsCredentials(value Config) bool {
+	if value.Hosting.Configured() && !value.Hosting.Fake() {
+		return true
+	}
+	if value.Mail.Configured() && !value.Mail.Fake() {
+		return true
+	}
+	return value.Billing.Provider == BillingProviderStripe
 }
 
 func positiveDuration(name, raw string) (time.Duration, error) {

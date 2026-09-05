@@ -1,0 +1,18 @@
+{
+  "methodResponses": [
+    [
+      "x:ApiKey/set",
+      {
+        "accountId": "c",
+        "created": {
+          "k1": {
+            "id": "c",
+            "secret": "API_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        }
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "3c1fe2ca"
+}

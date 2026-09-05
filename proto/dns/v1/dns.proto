@@ -34,6 +34,13 @@ enum RecordType {
   RECORD_TYPE_SOA = 9;
 }
 
+enum RecordSource {
+  RECORD_SOURCE_UNSPECIFIED = 0;
+  RECORD_SOURCE_USER = 1;
+  RECORD_SOURCE_HOSTING = 2;   // written by hosting.v1 (site attach / site DNS reconciler)
+  RECORD_SOURCE_MAIL = 3;      // written by mail.v1 (domain bind / mail reconciler)
+}
+
 message Record {
   string id = 1;
   string name = 2;
@@ -43,6 +50,7 @@ message Record {
   bool managed = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  RecordSource source = 9;     // USER for every record not written by an engine
 }
 
 message Zone {

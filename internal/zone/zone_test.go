@@ -233,3 +233,72 @@ func assertValidationField(t *testing.T, err error, want string) {
 		t.Errorf("validation field = %q, want %q", validationErr.Field, want)
 	}
 }
+
+// TestNormalizeRecordStoresWhatIsServed: a character-string value accepts input
+// the compiler silently drops, so the stored string could carry bytes the RR
+// does not. That made the RRset duplicate check, the planner's TXT comparison
+// and the raw zone table all disagree with the resolver, and let one RRset hold
+// two byte-identical TXT records — which RFC 2181 §5 forbids and which makes
+// SPF a permanent permerror.
+func TestNormalizeRecordStoresWhatIsServed(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		kind  zone.RecordType
+		input string
+		want  string
+	}{
+		{
+			name:  "a BIND line pasted with its trailing comment",
+			kind:  zone.TypeTXT,
+			input: `"v=spf1 mx -all" ; do not remove`,
+			want:  `"v=spf1 mx -all"`,
+		},
+		{
+			name:  "an already canonical TXT is untouched",
+			kind:  zone.TypeTXT,
+			input: `"v=spf1 mx -all"`,
+			want:  `"v=spf1 mx -all"`,
+		},
+		{
+			name:  "the split form of a long key an import produces",
+			kind:  zone.TypeTXT,
+			input: `"v=DKIM1; k=rsa; " "p=MIGfMA0GCSqGSIb3DQ"`,
+			want:  `"v=DKIM1; k=rsa; " "p=MIGfMA0GCSqGSIb3DQ"`,
+		},
+		{
+			name:  "unquoted text is still quoted",
+			kind:  zone.TypeTXT,
+			input: `hello world`,
+			want:  `"hello world"`,
+		},
+		{
+			name:  "a CAA tag is case-insensitive",
+			kind:  zone.TypeCAA,
+			input: `0 ISSUE "letsencrypt.org"`,
+			want:  `0 issue "letsencrypt.org"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			record, err := zone.NormalizeRecord("example.com", "@", tt.kind, 3600, tt.input)
+			if err != nil {
+				t.Fatalf("NormalizeRecord: %v", err)
+			}
+			if record.Value != tt.want {
+				t.Errorf("stored value = %q, want %q", record.Value, tt.want)
+			}
+			// Canonicality has to be idempotent: ValidateSnapshot re-normalises
+			// every stored record and refuses a zone that does not round-trip.
+			again, err := zone.NormalizeImportedRecord("example.com", "@", tt.kind, 3600, record.Value)
+			if err != nil {
+				t.Fatalf("re-normalising %q: %v", record.Value, err)
+			}
+			if again.Value != record.Value {
+				t.Errorf("re-normalising %q gave %q; normalisation is not idempotent", record.Value, again.Value)
+			}
+		})
+	}
+}

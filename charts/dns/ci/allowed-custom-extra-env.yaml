@@ -1,8 +1,8 @@
 control:
   extraEnv:
-    - name: OTEL_SERVICE_NAME
-      value: simpledns-control
+    - name: GOMEMLIMIT
+      value: 384MiB
 authority:
   extraEnv:
-    - name: OTEL_RESOURCE_ATTRIBUTES
-      value: service.namespace=dns
+    - name: GOMAXPROCS
+      value: "2"

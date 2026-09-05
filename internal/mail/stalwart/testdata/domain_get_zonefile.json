@@ -1,0 +1,23 @@
+{
+  "methodResponses": [
+    [
+      "x:Domain/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "name": "probe.test",
+            "isEnabled": true,
+            "createdAt": "2026-09-03T08:52:28Z",
+            "description": "simple zone z-probe",
+            "dnsZoneFile": "v1-ed25519-20260903._domainkey.probe.test. IN TXT \"v=DKIM1; k=ed25519; h=sha256; p=5t9iUKLc7NJ5SmfF8N9DBNAn74vuywt3j5mCnUDQmCM=\"\nv1-rsa-20260903._domainkey.probe.test. IN TXT (\n    \"v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwS6eGK8srmBUElDQbZiWywz6WPZL1cDihRY9rzl7t7+VLT8WyNbTykd45GxHJ5iojuk2cUlkwQ2zSJLoX7BKp/O3HtoHW/KmSz6Xt8FRlMPn0gN9GAjuHL6oHGEn/YwN6v7glNBtGmlmjEwUxvrZs/NmtWL7rXIWQG5CiC8Qz4JodQRApilp+sP\"\n    \"yIJd60baX2lnbonM4CdGZ5TLerMixoy45Z2NSLLuVe3X5WtmVziz7p/fGCDmC/HvUAKtFY+O/i66x7dYas5OE/uhl2XOJTD6rYetEiXzD9RCiRpGqcDclVvNcg8FF08YL3zW2hJ0bMGZMfucSeH03NMJOOxH41wIDAQAB\"\n)\nprobe.test. IN TXT \"v=spf1 mx -all\"\nprobe.test. IN MX 10 mail.local.test.\n_dmarc.probe.test. IN TXT \"v=DMARC1; p=reject; rua=mailto:postmaster@probe.test\"\n_caldavs._tcp.probe.test. IN SRV 0 1 443 mail.local.test.\n_carddavs._tcp.probe.test. IN SRV 0 1 443 mail.local.test.\n_imaps._tcp.probe.test. IN SRV 0 1 993 mail.local.test.\n_jmap._tcp.probe.test. IN SRV 0 1 443 mail.local.test.\n_pop3s._tcp.probe.test. IN SRV 0 1 995 mail.local.test.\n_submissions._tcp.probe.test. IN SRV 0 1 465 mail.local.test.\nmta-sts.probe.test. IN CNAME mail.local.test.\n_mta-sts.probe.test. IN TXT \"v=STSv1; id=4966920683339627112\"\n_smtp._tls.probe.test. IN TXT \"v=TLSRPTv1; rua=mailto:postmaster@probe.test\"\nua-auto-config.probe.test. IN CNAME mail.local.test.\n_ua-auto-config.probe.test. IN TXT \"v=UAAC1; a=sha256; d=ChkkELbHwgcLV5jhN3d6hfEbPq1fXmI1kESn0hHLMgc=\"\nautoconfig.probe.test. IN CNAME mail.local.test.\nautodiscover.probe.test. IN CNAME mail.local.test.\nmail.local.test. IN TXT \"v=spf1 a -all\"\n",
+            "id": "c"
+          }
+        ],
+        "notFound": []
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

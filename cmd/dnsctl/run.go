@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 	dnsv1 "github.com/castlemilk/dns/gen/go/dns/v1"
 	"github.com/castlemilk/dns/gen/go/dns/v1/dnsv1connect"
+	"github.com/castlemilk/dns/gen/go/platform/v1/platformv1connect"
 	"github.com/castlemilk/dns/internal/zonefile"
 )
 
@@ -25,32 +26,65 @@ const maxRPCBytes = zonefile.MaxBytes + 1<<20
 
 type clientFactory func(string, time.Duration) dnsv1connect.DNSServiceClient
 
-func run(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer, factory clientFactory) error {
+type platformClientFactory func(string, time.Duration) platformv1connect.PlatformServiceClient
+
+// dependencies are the process boundaries the commands cross. A zero value uses
+// the real ones; tests replace exactly the field they exercise.
+type dependencies struct {
+	dns       clientFactory
+	platform  platformClientFactory
+	transport http.RoundTripper
+}
+
+func (d dependencies) dnsClients() clientFactory {
+	if d.dns != nil {
+		return d.dns
+	}
+	return newConnectClient
+}
+
+func (d dependencies) platformClients() platformClientFactory {
+	if d.platform != nil {
+		return d.platform
+	}
+	return newPlatformClient
+}
+
+func run(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer, deps dependencies) error {
 	if len(args) == 0 {
 		writeUsage(stderr)
-		return errors.New("choose import or export")
+		return errors.New("choose import, export, platform-backup or platform-rebuild")
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
 		writeUsage(stdout)
 		return nil
-	case "import", "export":
+	case "import", "export", "platform-rebuild", "platform-backup":
 	default:
 		writeUsage(stderr)
 		return fmt.Errorf("unknown command %q", args[0])
 	}
-	if factory == nil {
-		factory = newConnectClient
+	// platform-backup reads the snapshot feed's credential, because it is the
+	// snapshot bearer token that guards the platform backup route; every other
+	// command spends the operator token.
+	if args[0] == "platform-backup" {
+		token, err := bearerToken("DNS_SNAPSHOT_BEARER_TOKEN", getenv("DNS_SNAPSHOT_BEARER_TOKEN"))
+		if err != nil {
+			return err
+		}
+		return runPlatformBackup(args[1:], getenv, stdout, stderr, token, deps.transport)
 	}
-	token, err := bearerToken(getenv("DNS_API_BEARER_TOKEN"))
+	token, err := bearerToken("DNS_API_BEARER_TOKEN", getenv("DNS_API_BEARER_TOKEN"))
 	if err != nil {
 		return err
 	}
 	switch args[0] {
 	case "import":
-		return runImport(args[1:], getenv, stdin, stdout, stderr, token, factory)
+		return runImport(args[1:], getenv, stdin, stdout, stderr, token, deps.dnsClients())
 	case "export":
-		return runExport(args[1:], getenv, stdout, stderr, token, factory)
+		return runExport(args[1:], getenv, stdout, stderr, token, deps.dnsClients())
+	case "platform-rebuild":
+		return runPlatformRebuild(args[1:], getenv, stdout, stderr, token, deps.platformClients())
 	}
 	return nil
 }
@@ -168,18 +202,25 @@ func runExport(args []string, getenv func(string) string, stdout, stderr io.Writ
 }
 
 func newConnectClient(baseURL string, timeout time.Duration) dnsv1connect.DNSServiceClient {
-	dialer := &net.Dialer{Timeout: min(timeout, 10*time.Second), KeepAlive: 30 * time.Second}
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment, DialContext: dialer.DialContext,
-		ForceAttemptHTTP2: true, MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second,
-		TLSHandshakeTimeout: min(timeout, 10*time.Second), ResponseHeaderTimeout: timeout,
+	return dnsv1connect.NewDNSServiceClient(newHTTPClient(timeout, nil), baseURL,
+		connect.WithReadMaxBytes(maxRPCBytes), connect.WithSendMaxBytes(maxRPCBytes))
+}
+
+// newHTTPClient is the one HTTP client every command uses. Redirects are never
+// followed: a redirect would resend the bearer token to whatever host answered.
+func newHTTPClient(timeout time.Duration, transport http.RoundTripper) *http.Client {
+	if transport == nil {
+		dialer := &net.Dialer{Timeout: min(timeout, 10*time.Second), KeepAlive: 30 * time.Second}
+		transport = &http.Transport{
+			Proxy: http.ProxyFromEnvironment, DialContext: dialer.DialContext,
+			ForceAttemptHTTP2: true, MaxIdleConns: 10, IdleConnTimeout: 30 * time.Second,
+			TLSHandshakeTimeout: min(timeout, 10*time.Second), ResponseHeaderTimeout: min(timeout, time.Minute),
+		}
 	}
-	client := &http.Client{
+	return &http.Client{
 		Transport: transport, Timeout: timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	return dnsv1connect.NewDNSServiceClient(client, baseURL,
-		connect.WithReadMaxBytes(maxRPCBytes), connect.WithSendMaxBytes(maxRPCBytes))
 }
 
 func validateAPIURL(raw string) (string, error) {
@@ -202,17 +243,17 @@ func isLoopbackHost(host string) bool {
 	return address != nil && address.IsLoopback()
 }
 
-func bearerToken(raw string) (string, error) {
+func bearerToken(name, raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return "", errors.New("DNS_API_BEARER_TOKEN is required")
+		return "", fmt.Errorf("%s is required", name)
 	}
 	if len(value) > 4096 {
-		return "", errors.New("DNS_API_BEARER_TOKEN is invalid")
+		return "", fmt.Errorf("%s is invalid", name)
 	}
 	for _, char := range value {
 		if char <= 0x20 || char > 0x7e {
-			return "", errors.New("DNS_API_BEARER_TOKEN is invalid")
+			return "", fmt.Errorf("%s is invalid", name)
 		}
 	}
 	return value, nil
@@ -248,11 +289,34 @@ func readInput(path string, stdin io.Reader, limit int) (raw []byte, resultErr e
 	return raw, nil
 }
 
-func writeOutput(path string, stdout io.Writer, raw []byte) (resultErr error) {
+func writeOutput(path string, stdout io.Writer, raw []byte) error {
 	if path == "-" {
 		_, err := stdout.Write(raw)
 		return err
 	}
+	return atomicWrite(path, func(file io.Writer) error {
+		_, err := file.Write(raw)
+		return err
+	})
+}
+
+// writeStream copies reader into path atomically, mirroring every byte into the
+// observers so the finished file can be verified without reading it back.
+func writeStream(path string, reader io.Reader, observers ...io.Writer) (int64, error) {
+	var written int64
+	err := atomicWrite(path, func(file io.Writer) error {
+		destination := file
+		if len(observers) > 0 {
+			destination = io.MultiWriter(append([]io.Writer{file}, observers...)...)
+		}
+		count, err := io.Copy(destination, reader)
+		written = count
+		return err
+	})
+	return written, err
+}
+
+func atomicWrite(path string, write func(io.Writer) error) (resultErr error) {
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a regular file", path)
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -262,7 +326,7 @@ func writeOutput(path string, stdout io.Writer, raw []byte) (resultErr error) {
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(directory, ".dnsctl-export-*")
+	temporary, err := os.CreateTemp(directory, ".dnsctl-*")
 	if err != nil {
 		return err
 	}
@@ -279,7 +343,7 @@ func writeOutput(path string, stdout io.Writer, raw []byte) (resultErr error) {
 	if err := temporary.Chmod(0o600); err != nil {
 		return err
 	}
-	if _, err := temporary.Write(raw); err != nil {
+	if err := write(temporary); err != nil {
 		return err
 	}
 	if err := temporary.Sync(); err != nil {
@@ -309,7 +373,7 @@ func envDefault(getenv func(string) string, name, fallback string) string {
 }
 
 func writeUsage(writer io.Writer) {
-	if _, err := fmt.Fprintln(writer, "usage: dnsctl import|export [options]"); err != nil {
+	if _, err := fmt.Fprintln(writer, "usage: dnsctl import|export|platform-backup|platform-rebuild [options]"); err != nil {
 		return
 	}
 }

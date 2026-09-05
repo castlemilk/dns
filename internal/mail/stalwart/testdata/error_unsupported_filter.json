@@ -1,0 +1,13 @@
+{
+  "methodResponses": [
+    [
+      "error",
+      {
+        "type": "unsupportedFilter",
+        "description": "Filter on property domainId is not supported or invalid"
+      },
+      "0"
+    ]
+  ],
+  "sessionState": "354bb43f"
+}

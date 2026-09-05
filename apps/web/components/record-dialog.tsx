@@ -1,7 +1,13 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+  useState,
+} from "react";
 
+import { DismissGuardNote } from "@/components/app/dismiss-guard-note";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,18 +26,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   RecordType,
   type Record as DNSRecord,
 } from "@/gen/dns/v1/dns_pb";
+import {
+  isPrintableTxt,
+  type RecordDraft,
+  recordTypeName,
+} from "@/lib/dns-values";
 import { describeError } from "@/lib/errors";
 
-export type RecordDraft = {
-  name: string;
-  type: RecordType;
-  ttl: number;
-  value: string;
-};
+// RecordDraft and recordTypeName live in lib/dns-values.ts (pure, importable from
+// server code); they stay exported here so existing import sites keep working.
+export type { RecordDraft };
+export { recordTypeName };
+
+type RecordField = "name" | "type" | "ttl" | "value";
+
+type RecordValidation = { field: RecordField; message: string };
 
 type RecordDialogProps = {
   open: boolean;
@@ -39,9 +53,16 @@ type RecordDialogProps = {
   record?: DNSRecord;
   onOpenChange: (open: boolean) => void;
   onSubmit: (draft: RecordDraft) => Promise<void>;
+  /** Seeds the fields when adding a record (ignored when `record` is given). */
+  initial?: Partial<RecordDraft>;
+  title?: string;
+  description?: ReactNode;
+  /** Renders the type select read-only, for flows that write one specific type. */
+  lockType?: boolean;
+  namePlaceholder?: string;
+  /** Evaluated on every render; blocks submit while it returns an error. */
+  validate?: (draft: RecordDraft) => RecordValidation | undefined;
 };
-
-type RecordField = "name" | "type" | "ttl" | "value";
 
 type RecordFormError = {
   field?: RecordField;
@@ -58,19 +79,6 @@ const recordTypes = [
   RecordType.SRV,
   RecordType.CAA,
 ] as const;
-
-const typeNames: Record<RecordType, string> = {
-  [RecordType.UNSPECIFIED]: "—",
-  [RecordType.A]: "A",
-  [RecordType.AAAA]: "AAAA",
-  [RecordType.CNAME]: "CNAME",
-  [RecordType.MX]: "MX",
-  [RecordType.TXT]: "TXT",
-  [RecordType.NS]: "NS",
-  [RecordType.SRV]: "SRV",
-  [RecordType.CAA]: "CAA",
-  [RecordType.SOA]: "SOA",
-};
 
 const valueGuidance: Record<
   (typeof recordTypes)[number],
@@ -110,10 +118,6 @@ const valueGuidance: Record<
   },
 };
 
-export function recordTypeName(type: RecordType): string {
-  return typeNames[type] ?? "UNKNOWN";
-}
-
 function describeRecordError(error: unknown): RecordFormError {
   const message = describeError(error);
   const match = /^(name|type|ttl|value):\s*(.+)$/.exec(message);
@@ -132,14 +136,57 @@ export function RecordDialog({
   record,
   onOpenChange,
   onSubmit,
+  initial,
+  title,
+  description,
+  lockType,
+  namePlaceholder,
+  validate,
 }: RecordDialogProps) {
-  const [name, setName] = useState(record?.name ?? "@");
-  const [type, setType] = useState(record?.type ?? RecordType.A);
-  const [ttl, setTTL] = useState(String(record?.ttl ?? 300));
-  const [value, setValue] = useState(record?.value ?? "");
+  const [name, setName] = useState(record?.name ?? initial?.name ?? "@");
+  const [type, setType] = useState(
+    record?.type ?? initial?.type ?? RecordType.A,
+  );
+  const [ttl, setTTL] = useState(String(record?.ttl ?? initial?.ttl ?? 300));
+  const [value, setValue] = useState(record?.value ?? initial?.value ?? "");
+  const [touched, setTouched] = useState<Partial<Record<RecordField, boolean>>>(
+    {},
+  );
   const [error, setError] = useState<RecordFormError>();
   const [submitting, setSubmitting] = useState(false);
   const guidance = valueGuidance[type as (typeof recordTypes)[number]];
+
+  // The server stores TXT with strconv.Quote, and miekg then serves "\n" as the letter
+  // "n" and "\x41" as "x41": a control character silently publishes something else.
+  // Reject it here, whatever the caller's own `validate` does.
+  const printable: RecordValidation | undefined =
+    type === RecordType.TXT && value.trim() && !isPrintableTxt(value)
+      ? {
+          field: "value",
+          message:
+            "value must be printable text (no control characters or line breaks)",
+        }
+      : undefined;
+  const validation =
+    validate?.({ name, type, ttl: Number(ttl), value }) ?? printable;
+  // Only surface the message once the offending field has been edited.
+  const shown: RecordFormError | undefined =
+    error ??
+    (validation && touched[validation.field]
+      ? { field: validation.field, message: validation.message }
+      : undefined);
+
+  function markTouched(field: RecordField) {
+    setTouched((current) =>
+      current[field] ? current : { ...current, [field]: true },
+    );
+  }
+
+  function clearFieldError(field: RecordField) {
+    if (error?.field === field) {
+      setError(undefined);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,22 +207,66 @@ export function RecordDialog({
     }
   }
 
+  const valueProps = {
+    id: "record-value",
+    autoComplete: "off" as const,
+    placeholder: guidance?.placeholder,
+    value,
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setValue(event.target.value);
+      markTouched("value");
+      clearFieldError("value");
+    },
+    "aria-invalid": shown?.field === "value" || undefined,
+    "aria-describedby":
+      shown?.field === "value" ? "record-value-error" : "record-value-help",
+    disabled: submitting,
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Dismissing mid-write would drop the error the request is about to return.
+        if (!next && submitting) {
+          return;
+        }
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+        showCloseButton={!submitting}
+        onEscapeKeyDown={(event) => {
+          if (submitting) {
+            event.preventDefault();
+          }
+        }}
+        onInteractOutside={(event) => {
+          if (submitting) {
+            event.preventDefault();
+          }
+        }}
+      >
         <form className="contents" onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>{record ? "Edit record" : "Add a record"}</DialogTitle>
+            <DialogTitle>
+              {title ?? (record ? "Edit record" : "Add a record")}
+            </DialogTitle>
             <DialogDescription>
-              {record ? "Update" : "Publish"} an authoritative answer in{" "}
-              <span className="font-mono text-foreground">{zoneName}</span>.
+              {description ?? (
+                <>
+                  {record ? "Update" : "Publish"} an authoritative answer in{" "}
+                  <span className="font-mono text-foreground">{zoneName}</span>.
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-1">
-            {error && !error.field ? (
+            {shown && !shown.field ? (
               <p role="alert" className="text-xs text-destructive">
-                {error.message}
+                {shown.message}
               </p>
             ) : null}
             <div className="grid gap-2 sm:grid-cols-[1fr_8rem]">
@@ -185,27 +276,26 @@ export function RecordDialog({
                   id="record-name"
                   autoComplete="off"
                   autoFocus
-                  placeholder="@ or www"
+                  placeholder={namePlaceholder ?? "@ or www"}
                   value={name}
                   onChange={(event) => {
                     setName(event.target.value);
-                    if (error?.field === "name") {
-                      setError(undefined);
-                    }
+                    markTouched("name");
+                    clearFieldError("name");
                   }}
-                  aria-invalid={error?.field === "name" || undefined}
+                  aria-invalid={shown?.field === "name" || undefined}
                   aria-describedby={
-                    error?.field === "name" ? "record-name-error" : undefined
+                    shown?.field === "name" ? "record-name-error" : undefined
                   }
                   disabled={submitting}
                 />
-                {error?.field === "name" ? (
+                {shown?.field === "name" ? (
                   <p
                     id="record-name-error"
                     role="alert"
                     className="text-xs text-destructive"
                   >
-                    {error.message}
+                    {shown.message}
                   </p>
                 ) : null}
               </div>
@@ -215,18 +305,17 @@ export function RecordDialog({
                   value={String(type)}
                   onValueChange={(next) => {
                     setType(Number(next) as RecordType);
-                    if (error?.field === "type") {
-                      setError(undefined);
-                    }
+                    markTouched("type");
+                    clearFieldError("type");
                   }}
-                  disabled={submitting}
+                  disabled={submitting || lockType}
                 >
                   <SelectTrigger
                     id="record-type"
                     className="w-full"
-                    aria-invalid={error?.field === "type" || undefined}
+                    aria-invalid={shown?.field === "type" || undefined}
                     aria-describedby={
-                      error?.field === "type" ? "record-type-error" : undefined
+                      shown?.field === "type" ? "record-type-error" : undefined
                     }
                   >
                     <SelectValue />
@@ -239,13 +328,13 @@ export function RecordDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                {error?.field === "type" ? (
+                {shown?.field === "type" ? (
                   <p
                     id="record-type-error"
                     role="alert"
                     className="text-xs text-destructive"
                   >
-                    {error.message}
+                    {shown.message}
                   </p>
                 ) : null}
               </div>
@@ -253,33 +342,18 @@ export function RecordDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="record-value">Value</Label>
-              <Input
-                id="record-value"
-                className="font-mono"
-                autoComplete="off"
-                placeholder={guidance?.placeholder}
-                value={value}
-                onChange={(event) => {
-                  setValue(event.target.value);
-                  if (error?.field === "value") {
-                    setError(undefined);
-                  }
-                }}
-                aria-invalid={error?.field === "value" || undefined}
-                aria-describedby={
-                  error?.field === "value"
-                    ? "record-value-error"
-                    : "record-value-help"
-                }
-                disabled={submitting}
-              />
-              {error?.field === "value" ? (
+              {type === RecordType.TXT ? (
+                <Textarea mono {...valueProps} />
+              ) : (
+                <Input className="font-mono" {...valueProps} />
+              )}
+              {shown?.field === "value" ? (
                 <p
                   id="record-value-error"
                   role="alert"
                   className="text-xs text-destructive"
                 >
-                  {error.message}
+                  {shown.message}
                 </p>
               ) : (
                 <p
@@ -303,13 +377,12 @@ export function RecordDialog({
                   value={ttl}
                   onChange={(event) => {
                     setTTL(event.target.value);
-                    if (error?.field === "ttl") {
-                      setError(undefined);
-                    }
+                    markTouched("ttl");
+                    clearFieldError("ttl");
                   }}
-                  aria-invalid={error?.field === "ttl" || undefined}
+                  aria-invalid={shown?.field === "ttl" || undefined}
                   aria-describedby={
-                    error?.field === "ttl" ? "record-ttl-error" : undefined
+                    shown?.field === "ttl" ? "record-ttl-error" : undefined
                   }
                   className="pr-14 font-mono tabular-nums"
                   disabled={submitting}
@@ -318,17 +391,19 @@ export function RecordDialog({
                   sec
                 </span>
               </div>
-              {error?.field === "ttl" ? (
+              {shown?.field === "ttl" ? (
                 <p
                   id="record-ttl-error"
                   role="alert"
                   className="text-xs text-destructive"
                 >
-                  {error.message}
+                  {shown.message}
                 </p>
               ) : null}
             </div>
           </div>
+
+          <DismissGuardNote active={submitting} action="Writing the record" />
 
           <DialogFooter>
             <Button
@@ -343,6 +418,7 @@ export function RecordDialog({
               type="submit"
               disabled={
                 submitting ||
+                Boolean(validation) ||
                 !name.trim() ||
                 !value.trim() ||
                 !ttl ||

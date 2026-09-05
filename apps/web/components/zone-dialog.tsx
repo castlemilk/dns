@@ -51,8 +51,8 @@ export function ZoneDialog({
           <DialogHeader>
             <DialogTitle>Add a zone</DialogTitle>
             <DialogDescription>
-              Create the authoritative zone first, then point the domain at its
-              assigned nameservers.
+              Creates the authoritative zone only. Use Connect a domain for the
+              guided setup.
             </DialogDescription>
           </DialogHeader>
 
@@ -71,7 +71,11 @@ export function ZoneDialog({
               disabled={submitting}
             />
             {error ? (
-              <p id="zone-error" className="text-xs text-destructive">
+              <p
+                id="zone-error"
+                role="alert"
+                className="text-xs text-destructive"
+              >
                 {error}
               </p>
             ) : (

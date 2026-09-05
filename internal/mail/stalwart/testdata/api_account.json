@@ -1,0 +1,29 @@
+{
+  "permissions": [
+    "authenticate",
+    "sysDomainGet",
+    "sysDomainCreate",
+    "sysDomainUpdate",
+    "sysDomainDestroy",
+    "sysDomainQuery",
+    "sysAccountGet",
+    "sysAccountCreate",
+    "sysAccountUpdate",
+    "sysAccountDestroy",
+    "sysAccountQuery",
+    "sysAccountPasswordUpdate",
+    "sysMailingListGet",
+    "sysMailingListCreate",
+    "sysMailingListUpdate",
+    "sysMailingListDestroy",
+    "sysMailingListQuery",
+    "sysDkimSignatureGet",
+    "sysDkimSignatureQuery",
+    "sysDkimSignatureDestroy",
+    "sysQueuedMessageGet",
+    "sysQueuedMessageQuery",
+    "sysSystemSettingsGet"
+  ],
+  "edition": "community",
+  "locale": "en-US"
+}

@@ -6,6 +6,13 @@ modules:
 lint:
   use:
     - STANDARD
+  ignore_only:
+    # The DeepHost protos are vendored verbatim from ~/projects/deephost; their
+    # streaming Deploy and internal Invoke RPCs predate the STANDARD naming rule.
+    RPC_REQUEST_STANDARD_NAME:
+      - proto/deephost/v1
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/deephost/v1
 
 breaking:
   use:

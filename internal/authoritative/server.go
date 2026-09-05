@@ -1,11 +1,14 @@
 package authoritative
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
+	"time"
 
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 	"github.com/miekg/dns"
 )
@@ -19,6 +22,7 @@ type Server struct {
 	maxUDP   uint16
 	queries  atomic.Uint64
 	snapshot atomic.Pointer[snapshot]
+	metrics  *telemetry.Metrics
 }
 
 type snapshot struct {
@@ -42,20 +46,33 @@ type compiledZone struct {
 	soa    []dns.RR
 }
 
-func New(logger *slog.Logger, maxUDP uint16) *Server {
+func New(logger *slog.Logger, maxUDP uint16, metricSets ...*telemetry.Metrics) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if maxUDP < dns.MinMsgSize {
 		maxUDP = DefaultMaxUDPSize
 	}
-	server := &Server{logger: logger, maxUDP: maxUDP}
+	server := &Server{logger: logger, maxUDP: maxUDP, metrics: telemetry.Select(metricSets...)}
 	server.snapshot.Store(&snapshot{zones: make(map[string]*compiledZone)})
 	return server
 }
 
 func (s *Server) Replace(values []zone.Zone) error {
+	started := time.Time{}
+	if s.metrics.MetricsEnabled() {
+		started = time.Now()
+	}
 	next, err := Compile(values)
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+	elapsed := time.Duration(0)
+	if !started.IsZero() {
+		elapsed = time.Since(started)
+	}
+	s.metrics.AuthoritativeCompile(context.Background(), outcome, elapsed)
 	if err != nil {
 		return err
 	}
@@ -79,6 +96,8 @@ func (s *Server) ReplaceCompiled(next *CompiledSnapshot) {
 		return
 	}
 	s.snapshot.Store(next.value)
+	s.metrics.SetInventory(next.value.zoneCount, next.value.recordCount)
+	s.metrics.AuthoritativePublish(context.Background())
 }
 
 func (s *Server) QueryCount() uint64 {
@@ -92,6 +111,10 @@ func (s *Server) Counts() (uint32, uint32) {
 
 func (s *Server) ServeDNS(writer dns.ResponseWriter, request *dns.Msg) {
 	s.queries.Add(1)
+	started := time.Time{}
+	if s.metrics.MetricsEnabled() {
+		started = time.Now()
+	}
 	response := new(dns.Msg)
 	response.SetReply(request)
 	response.Authoritative = false
@@ -111,11 +134,69 @@ func (s *Server) ServeDNS(writer dns.ResponseWriter, request *dns.Msg) {
 	}
 
 	s.addEDNS(request, response)
-	if strings.HasPrefix(writer.LocalAddr().Network(), "udp") {
+	network := ""
+	if address := writer.LocalAddr(); address != nil {
+		network = address.Network()
+	}
+	if strings.HasPrefix(network, "udp") {
 		response.Truncate(s.responseSize(request))
 	}
 	if err := writer.WriteMsg(response); err != nil {
 		s.logger.Debug("write DNS response", "error", err)
+		s.metrics.DNSWriteFailure(context.Background(), dnsTransport(network))
+	}
+	if !started.IsZero() {
+		questionType := "OTHER"
+		if len(request.Question) == 1 {
+			questionType = dnsQuestionType(request.Question[0].Qtype)
+		}
+		s.metrics.DNSQuery(
+			context.Background(),
+			dnsTransport(network),
+			questionType,
+			dnsResponseCode(response.Rcode),
+			time.Since(started),
+			response.Len(),
+			response.Truncated,
+		)
+	}
+}
+
+func dnsTransport(network string) string {
+	switch {
+	case strings.HasPrefix(network, "udp"):
+		return "udp"
+	case strings.HasPrefix(network, "tcp"):
+		return "tcp"
+	default:
+		return "other"
+	}
+}
+
+func dnsQuestionType(value uint16) string {
+	switch value {
+	case dns.TypeA, dns.TypeAAAA, dns.TypeCAA, dns.TypeCNAME, dns.TypeDNSKEY, dns.TypeDS,
+		dns.TypeHINFO, dns.TypeMX, dns.TypeNS, dns.TypeRRSIG, dns.TypeSOA, dns.TypeSRV,
+		dns.TypeTXT, dns.TypeANY:
+		return dns.TypeToString[value]
+	default:
+		return "OTHER"
+	}
+}
+
+func dnsResponseCode(value int) string {
+	// Extended RCODE 16 is BADVERS in an EDNS response. miekg/dns also uses
+	// the numeric value for BADSIG and its shared string map renders BADSIG,
+	// which is not the response this authoritative server emitted.
+	if value == dns.RcodeBadVers {
+		return "BADVERS"
+	}
+	switch value {
+	case dns.RcodeSuccess, dns.RcodeFormatError, dns.RcodeServerFailure, dns.RcodeNameError,
+		dns.RcodeNotImplemented, dns.RcodeRefused:
+		return dns.RcodeToString[value]
+	default:
+		return "OTHER"
 	}
 }
 

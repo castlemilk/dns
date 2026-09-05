@@ -135,8 +135,8 @@ Create namespace `dns` and an out-of-band Secret named by the chart. Its keys
 are `api-bearer-token` and `snapshot-bearer-token`. Render the production values
 locally, inspect every object, then apply `deploy/paprika/application.yaml`.
 Wait for Paprika health, the control pod, all authority pods, PVCs, Services,
-and PodDisruptionBudget. Confirm each authority reports ready and the snapshot
-checksum/version agrees across pods.
+PodDisruptionBudgets, and both OpenTelemetry Collector pods. Confirm each
+authority reports ready and the snapshot checksum/version agrees across pods.
 
 The production values must set:
 
@@ -145,7 +145,17 @@ The production values must set:
 - `DNS_PRODUCTION=true` everywhere;
 - the two real `DNS_NAMESERVERS` on the control pod;
 - `DNS_SNAPSHOT_MAX_STALENESS=24h` (or an explicitly reviewed value); and
-- a digest-pinned image reference and immutable Git revision.
+- digest-pinned application and collector image references plus an immutable
+  Git revision.
+
+Before exposing DNS, merge and deploy the Deephost monitoring integration from
+the [observability runbook](observability.md). Require both per-replica
+collector scrape jobs to be healthy, then exercise one API mutation plus UDP
+and TCP queries and confirm the control, snapshot, and DNS series advance.
+ServiceMonitor and PrometheusRule CRDs alone do not configure the current
+standalone VKE Prometheus. Do not patch its live ConfigMap; Paprika owns and
+self-heals that resource. The current platform has no Alertmanager, so visible
+firing rules are not yet a paging path.
 
 ## 3. Reconcile the Sydney DNS load balancer
 
@@ -256,7 +266,9 @@ dig @8.8.8.8 "${CANARY_ZONE}" SOA
 
 Keep the canary delegated for at least one full parent TTL while monitoring
 both transports, rcodes, latency, snapshot age, SOA skew, pod/VM restarts, and
-backend health.
+backend health. Component telemetry does not replace the external probe: it
+cannot observe registrar delegation, the public load balancer, or resolver
+reachability from outside VKE.
 
 ## Production-zone cutover gate
 

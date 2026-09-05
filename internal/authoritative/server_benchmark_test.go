@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/castlemilk/dns/internal/authoritative"
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 	"github.com/miekg/dns"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 const benchmarkZoneName = "bench.invalid"
@@ -49,29 +51,47 @@ func BenchmarkCompileReplacement(b *testing.B) {
 }
 
 func BenchmarkServeDNSExactA(b *testing.B) {
-	server := authoritative.New(nil, authoritative.DefaultMaxUDPSize)
-	compiled, err := authoritative.Compile([]zone.Zone{realisticBenchmarkZone(10_000)})
-	if err != nil {
-		b.Fatalf("Compile: %v", err)
+	benchmarks := []struct {
+		name    string
+		metrics func(*testing.B) *telemetry.Metrics
+	}{
+		{name: "Disabled", metrics: func(*testing.B) *telemetry.Metrics { return telemetry.Disabled() }},
+		{name: "EnabledNoop", metrics: func(b *testing.B) *telemetry.Metrics {
+			b.Helper()
+			value, err := telemetry.NewMetrics(noop.NewMeterProvider().Meter("benchmark"))
+			if err != nil {
+				b.Fatalf("NewMetrics: %v", err)
+			}
+			return value
+		}},
 	}
-	server.ReplaceCompiled(compiled)
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			server := authoritative.New(nil, authoritative.DefaultMaxUDPSize, benchmark.metrics(b))
+			compiled, err := authoritative.Compile([]zone.Zone{realisticBenchmarkZone(10_000)})
+			if err != nil {
+				b.Fatalf("Compile: %v", err)
+			}
+			server.ReplaceCompiled(compiled)
 
-	request := new(dns.Msg)
-	request.SetQuestion("host-00000."+benchmarkZoneName+".", dns.TypeA)
-	writer := &packingBenchmarkResponseWriter{}
+			request := new(dns.Msg)
+			request.SetQuestion("host-00000."+benchmarkZoneName+".", dns.TypeA)
+			writer := &packingBenchmarkResponseWriter{}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		server.ServeDNS(writer, request)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				server.ServeDNS(writer, request)
+			}
+			b.StopTimer()
+			if writer.err != nil {
+				b.Fatalf("pack response: %v", writer.err)
+			}
+			runtime.KeepAlive(server)
+			runtime.KeepAlive(request)
+			runtime.KeepAlive(writer.last)
+		})
 	}
-	b.StopTimer()
-	if writer.err != nil {
-		b.Fatalf("pack response: %v", writer.err)
-	}
-	runtime.KeepAlive(server)
-	runtime.KeepAlive(request)
-	runtime.KeepAlive(writer.last)
 }
 
 func observeSnapshotHeap(b *testing.B, server *authoritative.Server, values []zone.Zone) (float64, float64) {

@@ -76,14 +76,18 @@ spec:
             {{- toYaml .Values.web.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
-          {{- with .Values.web.extraEnv }}
           env:
+            # Server-side only: the landing page reads GET /public/v1/plan
+            # through the cluster Service. It is never sent to the browser and
+            # web.extraEnv already refuses DNS_* shadowing.
+            - name: DNS_API_URL
+              value: {{ include "dns.controlURL" . | quote }}
+            {{- if .Values.observability.enabled }}
+            {{- include "dns.otelEnv" (dict "root" . "component" "web") | nindent 12 }}
+            {{- end }}
+            {{- with .Values.web.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.web.extraEnvFrom }}
-          envFrom:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp

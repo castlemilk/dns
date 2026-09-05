@@ -1,0 +1,107 @@
+{{- if .Values.observability.collector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+spec:
+  replicas: {{ .Values.observability.collector.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/otel-collector-configmap.yaml") . | sha256sum }}
+        {{- with .Values.observability.collector.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- with .Values.observability.collector.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.observability.collector.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.collector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.collector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.observability.collector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.observability.collector.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.observability.collector.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.observability.collector.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.observability.collector.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 14 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.observability.collector.terminationGracePeriodSeconds }}
+      containers:
+        - name: otel-collector
+          image: {{ include "dns.image" .Values.observability.collector.image | quote }}
+          imagePullPolicy: {{ .Values.observability.collector.image.pullPolicy }}
+          args:
+            - --config=/conf/relay.yaml
+          securityContext:
+            {{- toYaml .Values.observability.collector.securityContext | nindent 12 }}
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: telemetry
+              containerPort: 8888
+              protocol: TCP
+            - name: prometheus
+              containerPort: 8889
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          startupProbe:
+            {{- toYaml .Values.observability.collector.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.observability.collector.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.observability.collector.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.observability.collector.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

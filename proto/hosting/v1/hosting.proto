@@ -1,0 +1,396 @@
+syntax = "proto3";
+
+package hosting.v1;
+
+import "google/protobuf/timestamp.proto";
+import "platform/v1/platform.proto";
+
+service HostingService {
+  rpc GetHostingStatus(GetHostingStatusRequest) returns (GetHostingStatusResponse) {}
+  rpc ListSites(ListSitesRequest) returns (ListSitesResponse) {}
+  rpc GetSite(GetSiteRequest) returns (GetSiteResponse) {}
+  rpc AttachSite(AttachSiteRequest) returns (AttachSiteResponse) {}
+  rpc UpdateSite(UpdateSiteRequest) returns (UpdateSiteResponse) {}
+  rpc DetachSite(DetachSiteRequest) returns (DetachSiteResponse) {}
+  rpc ReapplySiteDns(ReapplySiteDnsRequest) returns (ReapplySiteDnsResponse) {}
+  rpc CreateDeploy(CreateDeployRequest) returns (CreateDeployResponse) {}
+  rpc ListDeploys(ListDeploysRequest) returns (ListDeploysResponse) {}
+  rpc GetDeploy(GetDeployRequest) returns (GetDeployResponse) {}
+  rpc GetDeployLog(GetDeployLogRequest) returns (GetDeployLogResponse) {}
+  rpc RollbackSite(RollbackSiteRequest) returns (RollbackSiteResponse) {}
+  // Applies a resolved gateway address set that shares no address with the current one (§3.5).
+  rpc ConfirmGatewayAddresses(ConfirmGatewayAddressesRequest) returns (ConfirmGatewayAddressesResponse) {}
+  // Writes one runtime environment variable. The value is write-only: it is
+  // passed straight to the hosting engine and is never stored by this control
+  // plane, never logged, never returned and never placed in an activity detail
+  // or a metric attribute.
+  rpc SetSiteEnvVar(SetSiteEnvVarRequest) returns (SetSiteEnvVarResponse) {}
+  rpc DeleteSiteEnvVar(DeleteSiteEnvVarRequest) returns (DeleteSiteEnvVarResponse) {}
+  // Lists names, environments and last-set stamps. There is no field a value
+  // could travel in.
+  rpc ListSiteEnvVars(ListSiteEnvVarsRequest) returns (ListSiteEnvVarsResponse) {}
+}
+
+enum Framework {
+  FRAMEWORK_UNSPECIFIED = 0;
+  FRAMEWORK_STATIC = 1;
+  FRAMEWORK_NODE = 2;
+  FRAMEWORK_NEXTJS = 3;
+}
+
+enum SiteState {
+  SITE_STATE_UNSPECIFIED = 0;
+  SITE_STATE_ATTACHING = 1;   // row persisted; app created; DNS written; hosts being registered by the domain watcher
+  SITE_STATE_READY = 2;       // app + hosts registered + DNS written
+  SITE_STATE_DEGRADED = 3;    // a reconciler/watcher step keeps failing, or the zone no longer exists (reason)
+  SITE_STATE_DETACHING = 4;   // DeleteApp issued; waiting for the engine to finish removing hosts, or DNS cleanup pending
+}
+
+enum HostnameRole {
+  HOSTNAME_ROLE_UNSPECIFIED = 0;
+  HOSTNAME_ROLE_APEX = 1;
+  HOSTNAME_ROLE_WWW = 2;
+  HOSTNAME_ROLE_AUTO = 3;     // <app_ref>.<HOSTING_APPS_SUFFIX>; served by the platform wildcard, no DNS record of ours
+}
+
+// WwwMode is what www.<zone> does. SERVE is the default and what every site
+// created before this field existed does: both hosts serve the same site.
+enum WwwMode {
+  WWW_MODE_UNSPECIFIED = 0;  // request: leave as it is (update) or SERVE (attach)
+  WWW_MODE_SERVE = 1;
+  WWW_MODE_REDIRECT = 2;     // www.<zone> answers 301 to <zone>
+}
+
+enum HostnameState {
+  HOSTNAME_STATE_UNSPECIFIED = 0;
+  HOSTNAME_STATE_REGISTERED = 1;          // listed by the engine; readiness not reported (old server)
+  HOSTNAME_STATE_ROUTES_READY = 2;        // Domain.status.ready; certificate not applicable (tls_mode shared)
+  HOSTNAME_STATE_CERTIFICATE_PENDING = 3; // routes ready, per-host certificate not ready (reason)
+  HOSTNAME_STATE_CERTIFICATE_READY = 4;
+  HOSTNAME_STATE_MISSING = 5;             // facade expects it, ListDomains does not list it (reason = last registration error)
+  HOSTNAME_STATE_UNROUTED = 6;            // Domain.status.ready but the engine's gateway provider is "none": nothing serves this host
+}
+
+message Hostname {
+  string host = 1;
+  HostnameRole role = 2;
+  HostnameState state = 3;
+  string tls_mode = 4;        // "issued" | "shared" | "none" | "" (not reported)
+  string reason = 5;          // engine reason or last registration error, redacted
+  google.protobuf.Timestamp observed_at = 6;
+  bool retrying = 7;          // MISSING: the watcher keeps re-registering; false when the engine answered AlreadyExists
+  // The host this one answers 301 for, exactly as the engine reports it.
+  // Empty means the engine reports no redirect — either the host serves the
+  // site, or this engine version has no redirect field at all. The engine
+  // status capability `domain_redirect` tells the two apart.
+  string redirect_to = 8;
+}
+
+enum DeployKind {
+  DEPLOY_KIND_UNSPECIFIED = 0;
+  DEPLOY_KIND_GIT = 1;
+  DEPLOY_KIND_UPLOAD = 2;
+  DEPLOY_KIND_ROLLBACK = 3;   // PromoteRelease of an existing release (explicit rollback, or an upload identical to a previous build)
+}
+
+enum DeployPhase {
+  DEPLOY_PHASE_UNSPECIFIED = 0;
+  DEPLOY_PHASE_QUEUED = 1;      // row persisted; engine phase "" | Pending (or engine not yet called / upload being streamed)
+  DEPLOY_PHASE_BUILDING = 2;    // engine phase Building
+  DEPLOY_PHASE_RELEASING = 3;   // build Succeeded (or rollback requested); release not yet ready at weight 100 with siblings at 0
+  DEPLOY_PHASE_LIVE = 4;        // release ready && traffic_weight == 100 && every sibling release at weight 0
+  DEPLOY_PHASE_SUPERSEDED = 5;  // was live; another release took traffic
+  DEPLOY_PHASE_FAILED = 6;      // engine phase Failed (reason), stream/pack error, or engine call never confirmed and no build could be adopted
+  DEPLOY_PHASE_ABANDONED = 7;   // HOSTING_BUILD_DEADLINE passed without a terminal engine phase
+  DEPLOY_PHASE_LOST = 8;        // GetBuild NotFound on 5 consecutive polls
+}
+
+enum TimeSource {
+  TIME_SOURCE_UNSPECIFIED = 0;
+  TIME_SOURCE_ENGINE = 1;       // BuildView.*_unix_ms (new DeepHost)
+  TIME_SOURCE_OBSERVED = 2;     // the facade's own clock: when it asked / first saw a phase
+}
+
+message DeploySource {
+  string repository = 1;        // canonical https://github.com/owner/name (never a token, never userinfo)
+  string revision = 2;          // as requested (branch, tag or sha); never a resolved sha unless the user passed one
+  string path = 3;
+  bool private_repository = 4;  // a token was supplied for this deploy
+  string upload_name = 5;       // UPLOAD: top-level folder name, sanitised (§4.2); display only
+  uint32 upload_files = 6;
+  uint64 upload_bytes = 7;
+}
+
+message Deploy {
+  string id = 1;                // facade id "<unixms:016x>-<8 hex>", lexicographic = chronological
+  string zone_id = 2;
+  string zone_name = 3;
+  DeployKind kind = 4;
+  DeployPhase phase = 5;
+  string reason = 6;            // BuildView.reason, redacted; "build id recovered from the engine" after adoption
+  string build_id = 7;          // engine build id ("" until CreateGitBuild/Deploy returned)
+  string release_id = 8;        // "rel-<build_id>" once known
+  DeploySource source = 9;
+  Framework framework = 10;
+  google.protobuf.Timestamp requested_at = 11;   // facade clock, always set
+  google.protobuf.Timestamp started_at = 12;     // engine or observed
+  google.protobuf.Timestamp finished_at = 13;    // engine or observed
+  google.protobuf.Timestamp live_at = 14;        // first observation of weight 100 && ready && siblings 0
+  TimeSource time_source = 15;                   // ENGINE only when started/finished both came from the engine
+  uint32 build_seconds = 16;                     // finished - started when both known, else 0
+  bool live = 17;
+  bool log_snapshot = 18;                        // a log snapshot is stored
+  string rolled_back_from = 19;                  // ROLLBACK: deploy id that was live before
+  // The commit the engine actually built, as a full lowercase hex id, once it
+  // reports one on the release. Until then it is source.revision unchanged, so
+  // a caller renders a short sha only when this differs from source.revision.
+  // The engine reports none for upload deploys, for builds made before the
+  // engine could resolve one, and whenever it cannot read the build manifest.
+  string revision_resolved = 20;
+}
+
+message SiteDns {
+  bool in_sync = 1;                       // every expected engine record present with the expected value
+  repeated string apex_addresses = 2;     // A/AAAA at @ currently written by the engine
+  string www_target = 3;                  // "<zone>." or ""
+  repeated string record_ids = 4;         // engine-owned record ids in the zone
+  google.protobuf.Timestamp reconciled_at = 5;
+  repeated string problems = 6;           // "www CNAME missing", "A 203.0.113.9 at @ is not a gateway address (custom)"
+}
+
+message Site {
+  string zone_id = 1;
+  string zone_name = 2;
+  string app = 3;                  // DeepHost app name as sent ("acme-dev-1a2b3c")
+  string app_ref = 4;              // Kubernetes App name from CreateAppResponse ("simple-acme-dev-1a2b3c")
+  Framework framework = 5;
+  string repository = 6;           // remembered for "Deploy again"; "" for upload-only sites
+  string branch = 7;               // default revision; "main" when unset
+  string path = 8;
+  SiteState state = 9;
+  string reason = 10;
+  bool www = 11;                   // www.<zone> is registered and aliased
+  repeated Hostname hostnames = 12;
+  string auto_hostname = 13;       // "" when HOSTING_APPS_SUFFIX is unset
+  SiteDns dns = 14;
+  string live_deploy_id = 15;
+  string latest_deploy_id = 16;
+  Deploy live = 17;
+  Deploy latest = 18;
+  google.protobuf.Timestamp created_at = 19;
+  google.protobuf.Timestamp updated_at = 20;
+  bool zone_missing = 21;          // the zone was deleted or restored away; only Detach is offered
+  WwwMode www_mode = 22;           // what this site asked for; the hostname's redirect_to is what the engine reports
+}
+
+message GetHostingStatusRequest {}
+
+message GetHostingStatusResponse {
+  platform.v1.EngineStatus engine = 1;
+  string gateway_hostname = 2;
+  repeated string gateway_addresses = 3;       // current apex address set
+  string gateway_source = 4;                   // "static" | "resolved" | ""
+  google.protobuf.Timestamp gateway_resolved_at = 5;
+  string gateway_error = 6;                    // last resolution failure, "" when none
+  string apps_suffix = 7;
+  bool uploads_enabled = 8;
+  uint64 upload_max_bytes = 9;
+  uint32 sites = 10;
+  uint32 active_deploys = 11;                  // QUEUED | BUILDING | RELEASING
+  uint32 build_deadline_seconds = 12;          // HOSTING_BUILD_DEADLINE
+  repeated string gateway_pending_addresses = 13; // a resolved set awaiting ConfirmGatewayAddresses (§3.5); empty otherwise
+  google.protobuf.Timestamp gateway_pending_since = 14;
+  string gateway_resolver = 15;                // HOSTING_GATEWAY_RESOLVER host:port or "system"
+}
+
+message ListSitesRequest {}
+
+message ListSitesResponse {
+  repeated Site sites = 1;
+}
+
+message GetSiteRequest {
+  string zone_id = 1;
+}
+
+message GetSiteResponse {
+  Site site = 1;
+}
+
+message AttachSiteRequest {
+  string zone_id = 1;
+  Framework framework = 2;              // required
+  string repository = 3;                // optional metadata; validated when set
+  string branch = 4;                    // default "main"
+  string path = 5;
+  bool skip_www = 6;                    // false = register www.<zone> and write CNAME www
+  bool replace_conflicting_records = 7; // false + conflicts → FailedPrecondition with conflicts listed
+  bool dry_run = 8;                     // compute the plan only; nothing is written or registered
+  WwwMode www_mode = 9;                 // UNSPECIFIED = SERVE; REDIRECT requires skip_www = false
+}
+
+message AttachSiteResponse {
+  Site site = 1;                                     // state ATTACHING (hosts registered by the watcher within seconds); unset on dry_run
+  repeated platform.v1.RecordChange dns_plan = 2;
+  repeated platform.v1.RecordChange conflicts = 3;
+  bool dry_run = 4;
+}
+
+message UpdateSiteRequest {
+  string zone_id = 1;
+  optional string repository = 2;
+  optional string branch = 3;
+  optional string path = 4;
+  WwwMode www_mode = 5;   // UNSPECIFIED = leave as it is
+}
+
+message UpdateSiteResponse {
+  Site site = 1;
+}
+
+message DetachSiteRequest {
+  string zone_id = 1;
+  bool keep_dns_records = 2;   // true: re-source engine records as user records instead of deleting them
+  bool keep_app = 3;           // true: leave the DeepHost App (and its releases); hosts are removed only when the engine has DeleteDomain
+}
+
+message DetachSiteResponse {
+  repeated string orphaned_hosts = 1;   // hosts still registered: only when keep_app=true on an engine without DeleteDomain
+  string note = 2;
+  bool pending = 3;                     // true: the engine is still removing hosts; the row stays DETACHING and finishes in the background
+}
+
+message ReapplySiteDnsRequest {
+  string zone_id = 1;
+  bool replace_conflicting_records = 2;
+  bool dry_run = 3;
+}
+
+message ReapplySiteDnsResponse {
+  Site site = 1;
+  repeated platform.v1.RecordChange dns_plan = 2;
+  repeated platform.v1.RecordChange conflicts = 3;
+  bool dry_run = 4;
+}
+
+message CreateDeployRequest {
+  string zone_id = 1;
+  string repository = 2;     // GIT: https://github.com/owner/name[.git]; default site.repository
+  string revision = 3;       // default site.branch
+  string path = 4;           // default site.path
+  string git_token = 5;      // per-deploy token; forwarded once to CreateGitBuild; never stored or logged
+  Framework framework = 6;   // default site.framework
+  string upload_id = 7;      // UPLOAD: id from POST /hosting/v1/uploads; repository/revision/git_token must be empty
+}
+
+message CreateDeployResponse {
+  Deploy deploy = 1;         // QUEUED; UPLOAD deploys are packed and streamed by the upload deployer after this returns
+}
+
+message ListDeploysRequest {
+  string zone_id = 1;     // "" = all sites
+  uint32 limit = 2;       // default 20, max 100
+  string cursor = 3;      // last deploy id of the previous page
+}
+
+message ListDeploysResponse {
+  repeated Deploy deploys = 1;
+  string next_cursor = 2;
+}
+
+message GetDeployRequest {
+  string zone_id = 1;
+  string deploy_id = 2;
+}
+
+message GetDeployResponse {
+  Deploy deploy = 1;
+}
+
+enum LogSource {
+  LOG_SOURCE_UNSPECIFIED = 0;
+  LOG_SOURCE_LIVE = 1;      // GetBuildLogs just now
+  LOG_SOURCE_SNAPSHOT = 2;  // stored by the poller
+  LOG_SOURCE_NONE = 3;      // nothing available
+}
+
+message GetDeployLogRequest {
+  string zone_id = 1;
+  string deploy_id = 2;
+  uint32 tail_lines = 3;    // default 500, max 1000
+}
+
+message GetDeployLogResponse {
+  repeated string lines = 1;
+  bool complete = 2;
+  LogSource source = 3;
+  google.protobuf.Timestamp captured_at = 4;
+  bool truncated = 5;       // engine 256 KiB cap or the facade's 256 KiB snapshot cap hit
+  string note = 6;          // copy for NONE / SNAPSHOT (§4.4)
+}
+
+message RollbackSiteRequest {
+  string zone_id = 1;
+  string deploy_id = 2;     // a SUPERSEDED (or LIVE) deploy with a release id
+}
+
+message RollbackSiteResponse {
+  Deploy deploy = 1;        // the new ROLLBACK deploy row (phase RELEASING)
+}
+
+message ConfirmGatewayAddressesRequest {
+  repeated string addresses = 1;   // must equal gateway_pending_addresses exactly (canonical, sorted)
+}
+
+message ConfirmGatewayAddressesResponse {
+  repeated string addresses = 1;   // the stored set after confirmation
+  uint32 sites_queued = 2;         // sites whose apex records the site DNS reconciler rewrites
+}
+
+// EnvVar is one runtime environment variable of a site. It has no value field:
+// values are write-only, so there is nothing here a secret could travel in.
+message EnvVar {
+  string name = 1;
+  string environment = 2;              // production | preview | development
+  google.protobuf.Timestamp last_set = 3;  // unset when the engine has no record
+}
+
+message SetSiteEnvVarRequest {
+  string zone_id = 1;
+  string name = 2;
+  // Write-only. Forwarded once to the hosting engine and never stored, logged
+  // or echoed by this control plane.
+  string value = 3;
+  string environment = 4;              // default production
+}
+
+message SetSiteEnvVarResponse {
+  EnvVar variable = 1;
+  // Copy for the console: the running site keeps the values it started with
+  // until the next deploy.
+  string note = 2;
+}
+
+message DeleteSiteEnvVarRequest {
+  string zone_id = 1;
+  string name = 2;
+  string environment = 3;              // default production
+}
+
+message DeleteSiteEnvVarResponse {
+  string note = 1;
+}
+
+message ListSiteEnvVarsRequest {
+  string zone_id = 1;
+  string environment = 2;              // "" lists every environment
+}
+
+message ListSiteEnvVarsResponse {
+  repeated EnvVar variables = 1;
+  // False when this hosting engine version has no environment-variable RPCs.
+  // The list is then empty because nothing could be asked, not because the site
+  // has no variables — the console must say so rather than show "none".
+  bool supported = 2;
+  string note = 3;
+}

@@ -14,6 +14,33 @@ const eslintConfig = defineConfig([
     "gen/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/sample-zone",
+              message:
+                "Sample data may only be rendered by components/marketing/product-frame.tsx.",
+            },
+            {
+              name: "@/lib/sample-platform",
+              message:
+                "Sample data may only be rendered by components/marketing/product-frame.tsx.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["components/marketing/product-frame.tsx"],
+    rules: {
+      "no-restricted-imports": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

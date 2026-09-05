@@ -141,6 +141,58 @@ func (RecordType) EnumDescriptor() ([]byte, []int) {
 	return file_dns_v1_dns_proto_rawDescGZIP(), []int{1}
 }
 
+type RecordSource int32
+
+const (
+	RecordSource_RECORD_SOURCE_UNSPECIFIED RecordSource = 0
+	RecordSource_RECORD_SOURCE_USER        RecordSource = 1
+	RecordSource_RECORD_SOURCE_HOSTING     RecordSource = 2 // written by hosting.v1 (site attach / site DNS reconciler)
+	RecordSource_RECORD_SOURCE_MAIL        RecordSource = 3 // written by mail.v1 (domain bind / mail reconciler)
+)
+
+// Enum value maps for RecordSource.
+var (
+	RecordSource_name = map[int32]string{
+		0: "RECORD_SOURCE_UNSPECIFIED",
+		1: "RECORD_SOURCE_USER",
+		2: "RECORD_SOURCE_HOSTING",
+		3: "RECORD_SOURCE_MAIL",
+	}
+	RecordSource_value = map[string]int32{
+		"RECORD_SOURCE_UNSPECIFIED": 0,
+		"RECORD_SOURCE_USER":        1,
+		"RECORD_SOURCE_HOSTING":     2,
+		"RECORD_SOURCE_MAIL":        3,
+	}
+)
+
+func (x RecordSource) Enum() *RecordSource {
+	p := new(RecordSource)
+	*p = x
+	return p
+}
+
+func (x RecordSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RecordSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_dns_v1_dns_proto_enumTypes[2].Descriptor()
+}
+
+func (RecordSource) Type() protoreflect.EnumType {
+	return &file_dns_v1_dns_proto_enumTypes[2]
+}
+
+func (x RecordSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RecordSource.Descriptor instead.
+func (RecordSource) EnumDescriptor() ([]byte, []int) {
+	return file_dns_v1_dns_proto_rawDescGZIP(), []int{2}
+}
+
 type Record struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -151,6 +203,7 @@ type Record struct {
 	Managed       bool                   `protobuf:"varint,6,opt,name=managed,proto3" json:"managed,omitempty"`
 	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Source        RecordSource           `protobuf:"varint,9,opt,name=source,proto3,enum=dns.v1.RecordSource" json:"source,omitempty"` // USER for every record not written by an engine
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -239,6 +292,13 @@ func (x *Record) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Record) GetSource() RecordSource {
+	if x != nil {
+		return x.Source
+	}
+	return RecordSource_RECORD_SOURCE_UNSPECIFIED
 }
 
 type Zone struct {
@@ -1229,7 +1289,7 @@ var File_dns_v1_dns_proto protoreflect.FileDescriptor
 
 const file_dns_v1_dns_proto_rawDesc = "" +
 	"\n" +
-	"\x10dns/v1/dns.proto\x12\x06dns.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8c\x02\n" +
+	"\x10dns/v1/dns.proto\x12\x06dns.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xba\x02\n" +
 	"\x06Record\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12&\n" +
@@ -1240,7 +1300,8 @@ const file_dns_v1_dns_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x84\x02\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12,\n" +
+	"\x06source\x18\t \x01(\x0e2\x14.dns.v1.RecordSourceR\x06source\"\x84\x02\n" +
 	"\x04Zone\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1320,7 +1381,12 @@ const file_dns_v1_dns_proto_rawDesc = "" +
 	"\x0eRECORD_TYPE_NS\x10\x06\x12\x13\n" +
 	"\x0fRECORD_TYPE_SRV\x10\a\x12\x13\n" +
 	"\x0fRECORD_TYPE_CAA\x10\b\x12\x13\n" +
-	"\x0fRECORD_TYPE_SOA\x10\t2\xd3\x04\n" +
+	"\x0fRECORD_TYPE_SOA\x10\t*x\n" +
+	"\fRecordSource\x12\x1d\n" +
+	"\x19RECORD_SOURCE_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12RECORD_SOURCE_USER\x10\x01\x12\x19\n" +
+	"\x15RECORD_SOURCE_HOSTING\x10\x02\x12\x16\n" +
+	"\x12RECORD_SOURCE_MAIL\x10\x032\xd3\x04\n" +
 	"\n" +
 	"DNSService\x12B\n" +
 	"\tListZones\x12\x18.dns.v1.ListZonesRequest\x1a\x19.dns.v1.ListZonesResponse\"\x00\x12E\n" +
@@ -1350,71 +1416,73 @@ func file_dns_v1_dns_proto_rawDescGZIP() []byte {
 	return file_dns_v1_dns_proto_rawDescData
 }
 
-var file_dns_v1_dns_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_dns_v1_dns_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_dns_v1_dns_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_dns_v1_dns_proto_goTypes = []any{
 	(ZoneImportMode)(0),           // 0: dns.v1.ZoneImportMode
 	(RecordType)(0),               // 1: dns.v1.RecordType
-	(*Record)(nil),                // 2: dns.v1.Record
-	(*Zone)(nil),                  // 3: dns.v1.Zone
-	(*ServerStatus)(nil),          // 4: dns.v1.ServerStatus
-	(*ListZonesRequest)(nil),      // 5: dns.v1.ListZonesRequest
-	(*ListZonesResponse)(nil),     // 6: dns.v1.ListZonesResponse
-	(*CreateZoneRequest)(nil),     // 7: dns.v1.CreateZoneRequest
-	(*CreateZoneResponse)(nil),    // 8: dns.v1.CreateZoneResponse
-	(*DeleteZoneRequest)(nil),     // 9: dns.v1.DeleteZoneRequest
-	(*DeleteZoneResponse)(nil),    // 10: dns.v1.DeleteZoneResponse
-	(*CreateRecordRequest)(nil),   // 11: dns.v1.CreateRecordRequest
-	(*CreateRecordResponse)(nil),  // 12: dns.v1.CreateRecordResponse
-	(*UpdateRecordRequest)(nil),   // 13: dns.v1.UpdateRecordRequest
-	(*UpdateRecordResponse)(nil),  // 14: dns.v1.UpdateRecordResponse
-	(*DeleteRecordRequest)(nil),   // 15: dns.v1.DeleteRecordRequest
-	(*DeleteRecordResponse)(nil),  // 16: dns.v1.DeleteRecordResponse
-	(*ImportZoneRequest)(nil),     // 17: dns.v1.ImportZoneRequest
-	(*ImportZoneResponse)(nil),    // 18: dns.v1.ImportZoneResponse
-	(*ExportZoneRequest)(nil),     // 19: dns.v1.ExportZoneRequest
-	(*ExportZoneResponse)(nil),    // 20: dns.v1.ExportZoneResponse
-	(*timestamppb.Timestamp)(nil), // 21: google.protobuf.Timestamp
+	(RecordSource)(0),             // 2: dns.v1.RecordSource
+	(*Record)(nil),                // 3: dns.v1.Record
+	(*Zone)(nil),                  // 4: dns.v1.Zone
+	(*ServerStatus)(nil),          // 5: dns.v1.ServerStatus
+	(*ListZonesRequest)(nil),      // 6: dns.v1.ListZonesRequest
+	(*ListZonesResponse)(nil),     // 7: dns.v1.ListZonesResponse
+	(*CreateZoneRequest)(nil),     // 8: dns.v1.CreateZoneRequest
+	(*CreateZoneResponse)(nil),    // 9: dns.v1.CreateZoneResponse
+	(*DeleteZoneRequest)(nil),     // 10: dns.v1.DeleteZoneRequest
+	(*DeleteZoneResponse)(nil),    // 11: dns.v1.DeleteZoneResponse
+	(*CreateRecordRequest)(nil),   // 12: dns.v1.CreateRecordRequest
+	(*CreateRecordResponse)(nil),  // 13: dns.v1.CreateRecordResponse
+	(*UpdateRecordRequest)(nil),   // 14: dns.v1.UpdateRecordRequest
+	(*UpdateRecordResponse)(nil),  // 15: dns.v1.UpdateRecordResponse
+	(*DeleteRecordRequest)(nil),   // 16: dns.v1.DeleteRecordRequest
+	(*DeleteRecordResponse)(nil),  // 17: dns.v1.DeleteRecordResponse
+	(*ImportZoneRequest)(nil),     // 18: dns.v1.ImportZoneRequest
+	(*ImportZoneResponse)(nil),    // 19: dns.v1.ImportZoneResponse
+	(*ExportZoneRequest)(nil),     // 20: dns.v1.ExportZoneRequest
+	(*ExportZoneResponse)(nil),    // 21: dns.v1.ExportZoneResponse
+	(*timestamppb.Timestamp)(nil), // 22: google.protobuf.Timestamp
 }
 var file_dns_v1_dns_proto_depIdxs = []int32{
 	1,  // 0: dns.v1.Record.type:type_name -> dns.v1.RecordType
-	21, // 1: dns.v1.Record.created_at:type_name -> google.protobuf.Timestamp
-	21, // 2: dns.v1.Record.updated_at:type_name -> google.protobuf.Timestamp
-	21, // 3: dns.v1.Zone.created_at:type_name -> google.protobuf.Timestamp
-	21, // 4: dns.v1.Zone.updated_at:type_name -> google.protobuf.Timestamp
-	2,  // 5: dns.v1.Zone.records:type_name -> dns.v1.Record
-	21, // 6: dns.v1.ServerStatus.started_at:type_name -> google.protobuf.Timestamp
-	3,  // 7: dns.v1.ListZonesResponse.zones:type_name -> dns.v1.Zone
-	4,  // 8: dns.v1.ListZonesResponse.status:type_name -> dns.v1.ServerStatus
-	3,  // 9: dns.v1.CreateZoneResponse.zone:type_name -> dns.v1.Zone
-	1,  // 10: dns.v1.CreateRecordRequest.type:type_name -> dns.v1.RecordType
-	3,  // 11: dns.v1.CreateRecordResponse.zone:type_name -> dns.v1.Zone
-	1,  // 12: dns.v1.UpdateRecordRequest.type:type_name -> dns.v1.RecordType
-	3,  // 13: dns.v1.UpdateRecordResponse.zone:type_name -> dns.v1.Zone
-	3,  // 14: dns.v1.DeleteRecordResponse.zone:type_name -> dns.v1.Zone
-	0,  // 15: dns.v1.ImportZoneRequest.mode:type_name -> dns.v1.ZoneImportMode
-	3,  // 16: dns.v1.ImportZoneResponse.zone:type_name -> dns.v1.Zone
-	5,  // 17: dns.v1.DNSService.ListZones:input_type -> dns.v1.ListZonesRequest
-	7,  // 18: dns.v1.DNSService.CreateZone:input_type -> dns.v1.CreateZoneRequest
-	9,  // 19: dns.v1.DNSService.DeleteZone:input_type -> dns.v1.DeleteZoneRequest
-	11, // 20: dns.v1.DNSService.CreateRecord:input_type -> dns.v1.CreateRecordRequest
-	13, // 21: dns.v1.DNSService.UpdateRecord:input_type -> dns.v1.UpdateRecordRequest
-	15, // 22: dns.v1.DNSService.DeleteRecord:input_type -> dns.v1.DeleteRecordRequest
-	17, // 23: dns.v1.DNSService.ImportZone:input_type -> dns.v1.ImportZoneRequest
-	19, // 24: dns.v1.DNSService.ExportZone:input_type -> dns.v1.ExportZoneRequest
-	6,  // 25: dns.v1.DNSService.ListZones:output_type -> dns.v1.ListZonesResponse
-	8,  // 26: dns.v1.DNSService.CreateZone:output_type -> dns.v1.CreateZoneResponse
-	10, // 27: dns.v1.DNSService.DeleteZone:output_type -> dns.v1.DeleteZoneResponse
-	12, // 28: dns.v1.DNSService.CreateRecord:output_type -> dns.v1.CreateRecordResponse
-	14, // 29: dns.v1.DNSService.UpdateRecord:output_type -> dns.v1.UpdateRecordResponse
-	16, // 30: dns.v1.DNSService.DeleteRecord:output_type -> dns.v1.DeleteRecordResponse
-	18, // 31: dns.v1.DNSService.ImportZone:output_type -> dns.v1.ImportZoneResponse
-	20, // 32: dns.v1.DNSService.ExportZone:output_type -> dns.v1.ExportZoneResponse
-	25, // [25:33] is the sub-list for method output_type
-	17, // [17:25] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	22, // 1: dns.v1.Record.created_at:type_name -> google.protobuf.Timestamp
+	22, // 2: dns.v1.Record.updated_at:type_name -> google.protobuf.Timestamp
+	2,  // 3: dns.v1.Record.source:type_name -> dns.v1.RecordSource
+	22, // 4: dns.v1.Zone.created_at:type_name -> google.protobuf.Timestamp
+	22, // 5: dns.v1.Zone.updated_at:type_name -> google.protobuf.Timestamp
+	3,  // 6: dns.v1.Zone.records:type_name -> dns.v1.Record
+	22, // 7: dns.v1.ServerStatus.started_at:type_name -> google.protobuf.Timestamp
+	4,  // 8: dns.v1.ListZonesResponse.zones:type_name -> dns.v1.Zone
+	5,  // 9: dns.v1.ListZonesResponse.status:type_name -> dns.v1.ServerStatus
+	4,  // 10: dns.v1.CreateZoneResponse.zone:type_name -> dns.v1.Zone
+	1,  // 11: dns.v1.CreateRecordRequest.type:type_name -> dns.v1.RecordType
+	4,  // 12: dns.v1.CreateRecordResponse.zone:type_name -> dns.v1.Zone
+	1,  // 13: dns.v1.UpdateRecordRequest.type:type_name -> dns.v1.RecordType
+	4,  // 14: dns.v1.UpdateRecordResponse.zone:type_name -> dns.v1.Zone
+	4,  // 15: dns.v1.DeleteRecordResponse.zone:type_name -> dns.v1.Zone
+	0,  // 16: dns.v1.ImportZoneRequest.mode:type_name -> dns.v1.ZoneImportMode
+	4,  // 17: dns.v1.ImportZoneResponse.zone:type_name -> dns.v1.Zone
+	6,  // 18: dns.v1.DNSService.ListZones:input_type -> dns.v1.ListZonesRequest
+	8,  // 19: dns.v1.DNSService.CreateZone:input_type -> dns.v1.CreateZoneRequest
+	10, // 20: dns.v1.DNSService.DeleteZone:input_type -> dns.v1.DeleteZoneRequest
+	12, // 21: dns.v1.DNSService.CreateRecord:input_type -> dns.v1.CreateRecordRequest
+	14, // 22: dns.v1.DNSService.UpdateRecord:input_type -> dns.v1.UpdateRecordRequest
+	16, // 23: dns.v1.DNSService.DeleteRecord:input_type -> dns.v1.DeleteRecordRequest
+	18, // 24: dns.v1.DNSService.ImportZone:input_type -> dns.v1.ImportZoneRequest
+	20, // 25: dns.v1.DNSService.ExportZone:input_type -> dns.v1.ExportZoneRequest
+	7,  // 26: dns.v1.DNSService.ListZones:output_type -> dns.v1.ListZonesResponse
+	9,  // 27: dns.v1.DNSService.CreateZone:output_type -> dns.v1.CreateZoneResponse
+	11, // 28: dns.v1.DNSService.DeleteZone:output_type -> dns.v1.DeleteZoneResponse
+	13, // 29: dns.v1.DNSService.CreateRecord:output_type -> dns.v1.CreateRecordResponse
+	15, // 30: dns.v1.DNSService.UpdateRecord:output_type -> dns.v1.UpdateRecordResponse
+	17, // 31: dns.v1.DNSService.DeleteRecord:output_type -> dns.v1.DeleteRecordResponse
+	19, // 32: dns.v1.DNSService.ImportZone:output_type -> dns.v1.ImportZoneResponse
+	21, // 33: dns.v1.DNSService.ExportZone:output_type -> dns.v1.ExportZoneResponse
+	26, // [26:34] is the sub-list for method output_type
+	18, // [18:26] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_dns_v1_dns_proto_init() }
@@ -1427,7 +1495,7 @@ func file_dns_v1_dns_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dns_v1_dns_proto_rawDesc), len(file_dns_v1_dns_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,

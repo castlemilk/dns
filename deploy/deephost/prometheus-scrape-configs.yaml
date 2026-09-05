@@ -1,0 +1,25 @@
+# Append both entries under the standalone Prometheus `scrape_configs` list.
+# DNS service discovery resolves every ready endpoint behind the headless
+# Service, avoiding both cross-namespace Kubernetes API RBAC and incomplete
+# random-backend scrapes of the OTLP ClusterIP Service.
+- job_name: simpledns-otel-metrics
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names:
+        - dns-otel-metrics.dns.svc.cluster.local
+      type: A
+      port: 8889
+      refresh_interval: 30s
+
+- job_name: simpledns-otel-collector
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names:
+        - dns-otel-metrics.dns.svc.cluster.local
+      type: A
+      port: 8888
+      refresh_interval: 30s

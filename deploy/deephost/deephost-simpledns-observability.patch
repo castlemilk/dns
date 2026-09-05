@@ -1,0 +1,561 @@
+diff --git a/charts/deephost/Chart.yaml b/charts/deephost/Chart.yaml
+index 5c6924a..76adffd 100644
+--- a/charts/deephost/Chart.yaml
++++ b/charts/deephost/Chart.yaml
+@@ -2,5 +2,5 @@ apiVersion: v2
+ name: deephost
+ description: DeepHost — Vercel-style multi-tenant hosting on Kubernetes (serverless + S3 artifacts)
+ type: application
+-version: 0.1.9
+-appVersion: "0.1.9"
++version: 0.1.10
++appVersion: "0.1.10"
+diff --git a/charts/deephost/dashboards/simpledns.json b/charts/deephost/dashboards/simpledns.json
+new file mode 100644
+index 0000000..7ac58e9
+--- /dev/null
++++ b/charts/deephost/dashboards/simpledns.json
+@@ -0,0 +1,297 @@
++{
++  "annotations": {"list": []},
++  "editable": false,
++  "graphTooltip": 1,
++  "id": null,
++  "links": [],
++  "panels": [
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "description": "Healthy metrics and collector scrape targets should each be 2; collector replicas should be 2; authority replicas should be 3.",
++      "fieldConfig": {
++        "defaults": {"unit": "short"},
++        "overrides": [
++          {
++            "matcher": {"id": "byFrameRefID", "options": "A"},
++            "properties": [
++              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 2}]}}
++            ]
++          },
++          {
++            "matcher": {"id": "byFrameRefID", "options": "B"},
++            "properties": [
++              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 2}]}}
++            ]
++          },
++          {
++            "matcher": {"id": "byFrameRefID", "options": "C"},
++            "properties": [
++              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 2}]}}
++            ]
++          },
++          {
++            "matcher": {"id": "byFrameRefID", "options": "D"},
++            "properties": [
++              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 3}]}}
++            ]
++          }
++        ]
++      },
++      "gridPos": {"h": 5, "w": 16, "x": 0, "y": 0},
++      "id": 1,
++      "options": {
++        "colorMode": "value",
++        "graphMode": "none",
++        "justifyMode": "auto",
++        "orientation": "auto",
++        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
++        "textMode": "auto",
++        "wideLayout": true
++      },
++      "targets": [
++        {"expr": "sum(up{job=\"simpledns-otel-metrics\"}) or vector(0)", "instant": true, "legendFormat": "metrics scrapes / 2", "refId": "A"},
++        {"expr": "sum(up{job=\"simpledns-otel-collector\"}) or vector(0)", "instant": true, "legendFormat": "collector scrapes / 2", "refId": "B"},
++        {"expr": "count(count by (instance) (otelcol_process_uptime{service_name=\"simpledns-otel-collector\",service_namespace=\"dns\"})) or vector(0)", "instant": true, "legendFormat": "collectors / 2", "refId": "C"},
++        {"expr": "count(count by (k8s_pod_name) (simpledns_snapshot_ready{service_name=\"simpledns-authority\",service_namespace=\"dns\"})) or vector(0)", "instant": true, "legendFormat": "authorities / 3", "refId": "D"}
++      ],
++      "title": "Scrape and replica coverage",
++      "type": "stat"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "description": "Current firing state from the standalone SimpleDNS Prometheus rules.",
++      "fieldConfig": {
++        "defaults": {
++          "mappings": [
++            {"options": {"0": {"color": "green", "index": 0, "text": "None"}, "1": {"color": "red", "index": 1, "text": "Firing"}}, "type": "value"}
++          ],
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]},
++          "unit": "short"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 0},
++      "id": 2,
++      "options": {
++        "colorMode": "value",
++        "graphMode": "none",
++        "justifyMode": "auto",
++        "orientation": "auto",
++        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
++        "textMode": "auto",
++        "wideLayout": true
++      },
++      "targets": [
++        {"expr": "max by (alertname, severity, component) (ALERTS{alertname=~\"SimpleDNS.*\",alertstate=\"firing\"}) or on() vector(0)", "instant": true, "legendFormat": "{{alertname}}", "refId": "A"}
++      ],
++      "title": "Firing SimpleDNS alerts",
++      "type": "stat"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "suffix:qps"}, "overrides": []},
++      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 5},
++      "id": 3,
++      "targets": [
++        {"expr": "sum by (dns_response_code) (rate(simpledns_dns_queries_total{service_name=\"simpledns-authority\",service_namespace=\"dns\"}[5m]))", "legendFormat": "{{dns_response_code}}", "refId": "A"}
++      ],
++      "title": "Authoritative query rate by response code",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "max": 1,
++          "min": 0,
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.01}]},
++          "unit": "percentunit"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 5},
++      "id": 4,
++      "targets": [
++        {"expr": "(sum(rate(simpledns_dns_queries_total{service_name=\"simpledns-authority\",service_namespace=\"dns\",dns_response_code=\"SERVFAIL\"}[5m])) or vector(0)) / clamp_min(sum(rate(simpledns_dns_queries_total{service_name=\"simpledns-authority\",service_namespace=\"dns\"}[5m])), 0.001)", "legendFormat": "SERVFAIL", "refId": "A"}
++      ],
++      "title": "SERVFAIL ratio",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
++      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 5},
++      "id": 5,
++      "targets": [
++        {"expr": "histogram_quantile(0.95, sum by (le) (rate(simpledns_dns_query_duration_seconds_bucket{service_name=\"simpledns-authority\",service_namespace=\"dns\"}[5m])))", "legendFormat": "p95", "refId": "A"}
++      ],
++      "title": "DNS query latency",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1e-12}]},
++          "unit": "ops"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 13},
++      "id": 6,
++      "targets": [
++        {"expr": "sum by (k8s_pod_name, network_transport) (rate(simpledns_dns_write_failures_total{service_name=\"simpledns-authority\",service_namespace=\"dns\"}[5m])) or on() vector(0)", "legendFormat": "{{k8s_pod_name}} {{network_transport}}", "refId": "A"}
++      ],
++      "title": "DNS response write failures",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 300}]},
++          "unit": "s"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 13},
++      "id": 7,
++      "targets": [
++        {"expr": "max by (k8s_pod_name) (simpledns_snapshot_age_seconds{service_name=\"simpledns-authority\",service_namespace=\"dns\"})", "legendFormat": "{{k8s_pod_name}}", "refId": "A"}
++      ],
++      "title": "Authority snapshot age",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "mappings": [
++            {"options": {"0": {"color": "red", "index": 0, "text": "Not ready"}, "1": {"color": "green", "index": 1, "text": "Ready"}}, "type": "value"}
++          ],
++          "max": 1,
++          "min": 0,
++          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]},
++          "unit": "short"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 13},
++      "id": 8,
++      "targets": [
++        {"expr": "min by (k8s_pod_name) (simpledns_snapshot_ready{service_name=\"simpledns-authority\",service_namespace=\"dns\"})", "legendFormat": "{{k8s_pod_name}}", "refId": "A"}
++      ],
++      "title": "Authority snapshot ready",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1e-12}]},
++          "unit": "ops"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21},
++      "id": 9,
++      "targets": [
++        {"expr": "sum by (k8s_pod_name, outcome) (rate(simpledns_snapshot_fetches_total{service_name=\"simpledns-authority\",service_namespace=\"dns\",outcome=~\"request_error|transport_error|http_error|read_error|apply_error\"}[5m])) or on() vector(0)", "legendFormat": "fetch {{k8s_pod_name}} {{outcome}}", "refId": "A"},
++        {"expr": "sum by (k8s_pod_name, source, outcome) (rate(simpledns_snapshot_applies_total{service_name=\"simpledns-authority\",service_namespace=\"dns\",outcome!=\"success\"}[5m])) or on() vector(0)", "legendFormat": "apply {{k8s_pod_name}} {{source}} {{outcome}}", "refId": "B"}
++      ],
++      "title": "Snapshot refresh failures",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
++      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21},
++      "id": 10,
++      "targets": [
++        {"expr": "sum by (k8s_pod_name, outcome) (rate(simpledns_readiness_checks_total{service_name=\"simpledns-control\",service_namespace=\"dns\"}[5m]))", "legendFormat": "readiness {{k8s_pod_name}} {{outcome}}", "refId": "A"},
++        {"expr": "sum by (k8s_pod_name, operation, error_type) (rate(simpledns_control_mutations_total{service_name=\"simpledns-control\",service_namespace=\"dns\",outcome=\"error\"}[5m]))", "legendFormat": "mutation {{k8s_pod_name}} {{operation}} {{error_type}}", "refId": "B"}
++      ],
++      "title": "Control readiness and mutation failures",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
++      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 29},
++      "id": 11,
++      "options": {
++        "colorMode": "none",
++        "graphMode": "none",
++        "justifyMode": "auto",
++        "orientation": "auto",
++        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
++        "textMode": "auto",
++        "wideLayout": true
++      },
++      "targets": [
++        {"expr": "max(simpledns_inventory_zones{service_name=\"simpledns-control\",service_namespace=\"dns\"})", "instant": true, "legendFormat": "zones", "refId": "A"},
++        {"expr": "max(simpledns_inventory_records{service_name=\"simpledns-control\",service_namespace=\"dns\"})", "instant": true, "legendFormat": "records", "refId": "B"}
++      ],
++      "title": "Published inventory",
++      "type": "stat"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
++      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 29},
++      "id": 12,
++      "targets": [
++        {"expr": "sum by (k8s_pod_name) (rate(simpledns_web_server_requests_total{service_name=\"simpledns-web\",service_namespace=\"dns\"}[5m]))", "legendFormat": "all requests {{k8s_pod_name}}", "refId": "A"},
++        {"expr": "sum by (k8s_pod_name) (rate(simpledns_web_health_requests_total{service_name=\"simpledns-web\",service_namespace=\"dns\"}[5m]))", "legendFormat": "health subset {{k8s_pod_name}}", "refId": "B"},
++        {"expr": "sum by (k8s_pod_name) (rate(simpledns_web_server_errors_total{service_name=\"simpledns-web\",service_namespace=\"dns\"}[5m]))", "legendFormat": "errors {{k8s_pod_name}}", "refId": "C"}
++      ],
++      "title": "Web request, health, and error rate",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
++      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 29},
++      "id": 13,
++      "targets": [
++        {"expr": "histogram_quantile(0.95, sum by (le, k8s_pod_name) (rate(simpledns_web_server_request_duration_seconds_bucket{service_name=\"simpledns-web\",service_namespace=\"dns\"}[5m])))", "legendFormat": "p95 {{k8s_pod_name}}", "refId": "A"}
++      ],
++      "title": "Web request latency",
++      "type": "timeseries"
++    },
++    {
++      "datasource": {"type": "prometheus", "uid": "deephost-prometheus"},
++      "fieldConfig": {
++        "defaults": {
++          "custom": {"thresholdsStyle": {"mode": "line"}},
++          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1e-12}]},
++          "unit": "ops"
++        },
++        "overrides": []
++      },
++      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
++      "id": 14,
++      "targets": [
++        {"expr": "sum by (instance) (rate(otelcol_exporter_send_failed_metric_points{service_name=\"simpledns-otel-collector\",service_namespace=\"dns\"}[5m]))", "legendFormat": "{{instance}} export failed", "refId": "A"},
++        {"expr": "sum by (instance) (rate(otelcol_receiver_refused_metric_points{service_name=\"simpledns-otel-collector\",service_namespace=\"dns\"}[5m]))", "legendFormat": "{{instance}} metric points refused", "refId": "B"},
++        {"expr": "sum by (instance) (rate(otelcol_receiver_refused_spans{service_name=\"simpledns-otel-collector\",service_namespace=\"dns\"}[5m]))", "legendFormat": "{{instance}} spans refused", "refId": "C"}
++      ],
++      "title": "Collector telemetry loss by instance",
++      "type": "timeseries"
++    }
++  ],
++  "refresh": "30s",
++  "schemaVersion": 41,
++  "tags": ["simpledns", "dns", "opentelemetry"],
++  "templating": {"list": []},
++  "time": {"from": "now-6h", "to": "now"},
++  "timezone": "utc",
++  "title": "SimpleDNS Operations",
++  "uid": "simpledns-operations",
++  "version": 2
++}
+diff --git a/charts/deephost/rules/simpledns.yaml b/charts/deephost/rules/simpledns.yaml
+new file mode 100644
+index 0000000..78c9838
+--- /dev/null
++++ b/charts/deephost/rules/simpledns.yaml
+@@ -0,0 +1,80 @@
++# Load this file through the standalone Prometheus `rule_files` setting. The
++# rules evaluate without Alertmanager, but they cannot page until a notification
++# delivery integration is installed and configured.
++groups:
++  - name: simpledns.availability
++    rules:
++      - alert: SimpleDNSCollectorUnavailable
++        expr: absent(otelcol_process_uptime{service_name="simpledns-otel-collector",service_namespace="dns"}) or count(otelcol_process_uptime{service_name="simpledns-otel-collector",service_namespace="dns"}) < 2
++        for: 10m
++        labels:
++          severity: critical
++          component: otel-collector
++        annotations:
++          summary: SimpleDNS OpenTelemetry Collector capacity is unavailable
++          description: Fewer than the two production collectors are being scraped; application telemetry may be incomplete.
++      - alert: SimpleDNSCollectorExporterFailures
++        expr: sum(rate(otelcol_exporter_send_failed_metric_points{service_name="simpledns-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_refused_metric_points{service_name="simpledns-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_refused_spans{service_name="simpledns-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_failed_spans{service_name="simpledns-otel-collector",service_namespace="dns"}[5m])) > 0
++        for: 10m
++        labels:
++          severity: critical
++          component: otel-collector
++        annotations:
++          summary: SimpleDNS telemetry is being dropped
++          description: A collector exporter failed or the bounded receiver refused metric points or spans.
++      - alert: SimpleDNSControlUnavailable
++        expr: absent(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace="dns"}) or sum(rate(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace="dns",outcome="ready"}[5m])) == 0 or sum(rate(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace="dns",outcome="not_ready"}[5m])) > 0
++        for: 10m
++        labels:
++          severity: critical
++          component: control
++        annotations:
++          summary: SimpleDNS control plane is unavailable
++          description: Control readiness telemetry is absent, stalled, or continuously reporting not ready.
++      - alert: SimpleDNSWebUnavailable
++        expr: absent(simpledns_web_health_requests_total{service_name="simpledns-web",service_namespace="dns"}) or sum(rate(simpledns_web_health_requests_total{service_name="simpledns-web",service_namespace="dns"}[5m])) == 0
++        for: 10m
++        labels:
++          severity: critical
++          component: web
++        annotations:
++          summary: SimpleDNS web telemetry is unavailable
++          description: Web health-probe telemetry is absent or has stopped advancing.
++  - name: simpledns.data-plane
++    rules:
++      - alert: SimpleDNSAuthorityTelemetryMissing
++        expr: absent(simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace="dns"}) or count(count by (k8s_pod_name) (simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace="dns"})) < 3
++        for: 10m
++        labels:
++          severity: critical
++          component: authority
++        annotations:
++          summary: SimpleDNS authority telemetry is incomplete
++          description: Fewer than the three production authorities are publishing snapshot readiness.
++      - alert: SimpleDNSAuthoritySnapshotStale
++        expr: max by (k8s_pod_name) (simpledns_snapshot_age_seconds{service_name="simpledns-authority",service_namespace="dns"}) > 300 or min by (k8s_pod_name) (simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace="dns"}) < 1
++        for: 10m
++        labels:
++          severity: critical
++          component: authority
++        annotations:
++          summary: A SimpleDNS authority has a stale snapshot
++          description: The authority snapshot exceeded 300 seconds or is no longer ready.
++      - alert: SimpleDNSSnapshotFailures
++        expr: sum by (k8s_pod_name) (rate(simpledns_snapshot_fetches_total{service_name="simpledns-authority",service_namespace="dns",outcome=~"request_error|transport_error|http_error|read_error|apply_error"}[5m])) > 0 or sum by (k8s_pod_name) (rate(simpledns_snapshot_applies_total{service_name="simpledns-authority",service_namespace="dns",outcome!="success"}[5m])) > 0
++        for: 10m
++        labels:
++          severity: warning
++          component: authority
++        annotations:
++          summary: A SimpleDNS authority cannot refresh its snapshot
++          description: Snapshot fetch, validation, compilation, or cache publication is repeatedly failing.
++      - alert: SimpleDNSServfailRatioHigh
++        expr: (sum(rate(simpledns_dns_queries_total{service_name="simpledns-authority",service_namespace="dns",dns_response_code="SERVFAIL"}[5m])) / clamp_min(sum(rate(simpledns_dns_queries_total{service_name="simpledns-authority",service_namespace="dns"}[5m])), 0.001)) > 0.01 or sum(rate(simpledns_dns_write_failures_total{service_name="simpledns-authority",service_namespace="dns"}[5m])) > 0
++        for: 10m
++        labels:
++          severity: critical
++          component: authority
++        annotations:
++          summary: SimpleDNS authoritative error ratio is high
++          description: SERVFAIL responses exceed one percent or response writes are failing.
+diff --git a/charts/deephost/templates/_helpers.tpl b/charts/deephost/templates/_helpers.tpl
+index 60383ee..8942d2a 100644
+--- a/charts/deephost/templates/_helpers.tpl
++++ b/charts/deephost/templates/_helpers.tpl
+@@ -52,6 +52,10 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
+ global:
+   scrape_interval: {{ .Values.monitoring.prometheus.scrapeInterval | quote }}
+   evaluation_interval: {{ .Values.monitoring.prometheus.evaluationInterval | quote }}
++{{- if .Values.monitoring.prometheus.scrapeSimpleDNS }}
++rule_files:
++  - /etc/prometheus/simpledns-rules.yaml
++{{- end }}
+ scrape_configs:
+   - job_name: prometheus
+     static_configs:
+@@ -122,6 +126,27 @@ scrape_configs:
+         labels:
+           component: webhook-receiver
+ {{- end }}
++{{- if .Values.monitoring.prometheus.scrapeSimpleDNS }}
++  # Each OpenTelemetry Collector replica owns independent in-memory exporter
++  # state. Headless DNS discovery scrapes every pod without cross-namespace
++  # Kubernetes API RBAC or random ClusterIP backend selection.
++  - job_name: simpledns-otel-metrics
++    metrics_path: /metrics
++    dns_sd_configs:
++      - names:
++          - {{ printf "%s.%s.svc.cluster.local" .Values.monitoring.prometheus.simpleDNS.metricsService .Values.monitoring.prometheus.simpleDNS.namespace | quote }}
++        type: A
++        port: 8889
++        refresh_interval: 30s
++  - job_name: simpledns-otel-collector
++    metrics_path: /metrics
++    dns_sd_configs:
++      - names:
++          - {{ printf "%s.%s.svc.cluster.local" .Values.monitoring.prometheus.simpleDNS.metricsService .Values.monitoring.prometheus.simpleDNS.namespace | quote }}
++        type: A
++        port: 8888
++        refresh_interval: 30s
++{{- end }}
+ {{- if and .Values.redis.inCluster .Values.monitoring.prometheus.scrapeRedis }}
+   - job_name: redis
+     metrics_path: /metrics
+diff --git a/charts/deephost/templates/monitoring-grafana.yaml b/charts/deephost/templates/monitoring-grafana.yaml
+index 29f034c..ac0c08b 100644
+--- a/charts/deephost/templates/monitoring-grafana.yaml
++++ b/charts/deephost/templates/monitoring-grafana.yaml
+@@ -28,6 +28,9 @@ data:
+         type: file
+         disableDeletion: true
+         editable: false
++        # Force periodic reads of projected ConfigMap updates. Grafana uses
++        # filesystem events at shorter intervals, which are mount-dependent.
++        updateIntervalSeconds: 30
+         options:
+           path: /var/lib/grafana/dashboards
+ ---
+diff --git a/charts/deephost/templates/monitoring-prometheus.yaml b/charts/deephost/templates/monitoring-prometheus.yaml
+index 5baef85..5cce403 100644
+--- a/charts/deephost/templates/monitoring-prometheus.yaml
++++ b/charts/deephost/templates/monitoring-prometheus.yaml
+@@ -9,6 +9,10 @@ metadata:
+ data:
+   prometheus.yml: |
+ {{ include "deephost.prometheusConfig" . | indent 4 }}
++{{- if .Values.monitoring.prometheus.scrapeSimpleDNS }}
++  simpledns-rules.yaml: |
++{{ .Files.Get "rules/simpledns.yaml" | indent 4 }}
++{{- end }}
+ ---
+ apiVersion: v1
+ kind: Service
+@@ -44,6 +48,9 @@ spec:
+         app: deephost-prometheus
+       annotations:
+         checksum/prometheus-config: {{ include "deephost.prometheusConfig" . | sha256sum }}
++        {{- if .Values.monitoring.prometheus.scrapeSimpleDNS }}
++        checksum/simpledns-rules: {{ .Files.Get "rules/simpledns.yaml" | sha256sum }}
++        {{- end }}
+     spec:
+       {{- if .Values.rbac.create }}
+       serviceAccountName: deephost-prometheus
+diff --git a/charts/deephost/values-vke.yaml b/charts/deephost/values-vke.yaml
+index d77db12..baa9b3d 100644
+--- a/charts/deephost/values-vke.yaml
++++ b/charts/deephost/values-vke.yaml
+@@ -112,6 +112,10 @@ monitoring:
+   prometheus:
+     enabled: true
+     scrapePaprika: true
++    scrapeSimpleDNS: true
++    simpleDNS:
++      namespace: dns
++      metricsService: dns-otel-metrics
+     scrapeMinio: true
+     scrapeRedis: true
+     paprikaNamespace: paprika-e2e
+diff --git a/charts/deephost/values.yaml b/charts/deephost/values.yaml
+index e2d8126..ac32747 100644
+--- a/charts/deephost/values.yaml
++++ b/charts/deephost/values.yaml
+@@ -200,6 +200,10 @@ monitoring:
+     retention: 7d
+     retentionSize: 4GB
+     scrapePaprika: false
++    scrapeSimpleDNS: false
++    simpleDNS:
++      namespace: dns
++      metricsService: dns-otel-metrics
+     paprikaNamespace: paprika-e2e
+     scrapeMinio: false
+     scrapeRedis: false
+diff --git a/deploy/paprika/deephost.yaml b/deploy/paprika/deephost.yaml
+index 3f15a9f..c7886dc 100644
+--- a/deploy/paprika/deephost.yaml
++++ b/deploy/paprika/deephost.yaml
+@@ -101,6 +101,9 @@ spec:
+     monitoring.enabled: "true"
+     monitoring.prometheus.enabled: "true"
+     monitoring.prometheus.scrapePaprika: "true"
++    monitoring.prometheus.scrapeSimpleDNS: "true"
++    monitoring.prometheus.simpleDNS.namespace: dns
++    monitoring.prometheus.simpleDNS.metricsService: dns-otel-metrics
+     monitoring.prometheus.scrapeMinio: "true"
+     monitoring.prometheus.scrapeRedis: "true"
+     monitoring.prometheus.paprikaNamespace: paprika-e2e
+diff --git a/docs/monitoring.md b/docs/monitoring.md
+index 13dc339..ec10dcd 100644
+--- a/docs/monitoring.md
++++ b/docs/monitoring.md
+@@ -14,7 +14,7 @@ DeepHost's optional monitoring layer runs without the Prometheus Operator:
+ 
+ ## Dashboards
+ 
+-Grafana provisions two read-only dashboards in the `DeepHost` folder:
++Grafana provisions three read-only dashboards in the `DeepHost` folder:
+ 
+ - `Paprika Operations` shows scrape coverage, application drift and health,
+   per-application sync activity, release/application phases, reconcile errors,
+@@ -23,12 +23,17 @@ Grafana provisions two read-only dashboards in the `DeepHost` folder:
+   CPU, controller queues and reconcile latency, HTTP traffic, Hydra cache
+   residency, Redis queue health, scrape volume, and Prometheus series/storage
+   pressure.
++- `SimpleDNS Operations` shows authoritative traffic and latency, snapshot and
++  control health, web health, alert state, replica coverage, and collector
++  telemetry loss. It uses the existing `deephost-prometheus` datasource and
++  this Grafana instance; it does not install a second monitoring stack.
+ 
+ The dashboards are provisioned by `deephost-grafana-provisioning` and
+ `deephost-grafana-dashboards`; the Grafana data directory is ephemeral, so the
+-Git files are the deployment source of truth. The current VKE rollout exposes
+-Grafana at `https://grafana.benebsworth.com` and its health endpoint returns
+-HTTP 200 when the route and OAuth configuration are working.
++Git files are the deployment source of truth. The file provider polls the
++projected dashboard ConfigMap every 30 seconds. The current VKE rollout
++exposes Grafana at `https://grafana.benebsworth.com` and its health endpoint
++returns HTTP 200 when the route and OAuth configuration are working.
+ 
+ The Paprika application view treats an application as healthy when both
+ `paprika_out_of_sync` and `paprika_prunable` are zero. The phase gauges are

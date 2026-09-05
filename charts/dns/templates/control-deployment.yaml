@@ -89,18 +89,22 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecret }}
                   key: {{ .Values.auth.snapshotBearerTokenKey }}
+            {{- include "dns.platformEnv" . | nindent 12 }}
+            {{- if .Values.observability.enabled }}
+            {{- include "dns.otelEnv" (dict "root" . "component" "control") | nindent 12 }}
+            {{- end }}
             {{- with .Values.control.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.control.extraEnvFrom }}
-          envFrom:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+            {{- if and .Values.platform.hosting.enabled .Values.platform.hosting.uploads.enabled }}
+            - name: uploads
+              mountPath: /uploads
+            {{- end }}
       volumes:
         - name: data
           {{- if .Values.control.persistence.enabled }}
@@ -111,3 +115,13 @@ spec:
           {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- if and .Values.platform.hosting.enabled .Values.platform.hosting.uploads.enabled }}
+        # Folder uploads never share the DNS volume: a burst of uploads must
+        # not be able to fill the 1 Gi bbolt claim. The janitor deletes an
+        # upload directory an hour after it was created. The quota tracks the
+        # admission cap the server enforces (see dns.uploadsSizeLimit), never
+        # maxBytes alone: kubelet evicts the pod that overruns it.
+        - name: uploads
+          emptyDir:
+            sizeLimit: {{ include "dns.uploadsSizeLimit" . }}
+        {{- end }}

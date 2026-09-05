@@ -1,0 +1,50 @@
+{
+  "methodResponses": [
+    [
+      "x:MailingList/query",
+      {
+        "accountId": "c",
+        "queryState": "n",
+        "canCalculateChanges": true,
+        "position": 0,
+        "ids": [
+          "b",
+          "e"
+        ]
+      },
+      "0"
+    ],
+    [
+      "x:MailingList/get",
+      {
+        "accountId": "c",
+        "list": [
+          {
+            "name": "team",
+            "domainId": "c",
+            "description": "forwarder",
+            "recipients": {
+              "someone@example.com": true,
+              "mara@probe.test": true
+            },
+            "emailAddress": "team@probe.test",
+            "id": "b"
+          },
+          {
+            "name": "everyone",
+            "domainId": "z",
+            "description": "forwarder",
+            "recipients": {
+              "other@elsewhere.test": true
+            },
+            "emailAddress": "everyone@other.test",
+            "id": "e"
+          }
+        ],
+        "notFound": []
+      },
+      "1"
+    ]
+  ],
+  "sessionState": "240fbd1a"
+}

@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package deephost.v1;
+
+option go_package = "github.com/benebsworth/deephost/gen/go/deephost/v1;deephostv1";
+
+// Framework describes how an artifact is executed at runtime.
+enum Framework {
+  FRAMEWORK_UNSPECIFIED = 0;
+  // Prebuilt files served directly from object storage.
+  FRAMEWORK_STATIC = 1;
+  // A directory containing server.js exporting a Node http handler.
+  FRAMEWORK_NODE = 2;
+  // Next.js standalone output (server.js) executed by a Node worker.
+  FRAMEWORK_NEXTJS = 3;
+}
+
+// Isolation selects the runtime pool strategy for an App.
+enum Isolation {
+  ISOLATION_UNSPECIFIED = 0;
+  // Shared multiplexed hydra pool (default, lightweight).
+  ISOLATION_SHARED = 1;
+  // Dedicated Knative Service / Deployment per tenant app.
+  ISOLATION_DEDICATED = 2;
+}
+
+// Scaling controls autoscaling bounds for an app's runtime.
+message Scaling {
+  int32 min_replicas = 1;
+  int32 max_replicas = 2;
+  int32 target_rps = 3;
+}
+
+// BuildSettings controls the framework adapter used for Git builds. Empty
+// values select adapter defaults. Output directory applies to static and Node
+// artifacts; Next.js retains its standalone output contract.
+message BuildSettings {
+  string root_directory = 1;
+  string install_command = 2;
+  string build_command = 3;
+  string output_directory = 4;
+}
+
+// EnvSecretRef references a Kubernetes Secret key without carrying its value.
+message EnvSecretRef {
+  string name = 1;         // Process environment variable name.
+  string secret = 2;       // Same-namespace Kubernetes Secret name.
+  string key = 3;          // Secret data key.
+  string environment = 4; // production, preview, or development.
+}
+
+// GitSource points at a repo revision to build.
+message GitSource {
+  string repo_url = 1;
+  string revision = 2;
+  string path = 3; // subdirectory containing the app
+}
+
+// BuildManifest is stored alongside the artifact in object storage and is the
+// contract between builder and router/hydra.
+message BuildManifest {
+  Framework framework = 1;
+  string app_ref = 2;
+  string build_ref = 3;
+  string git_sha = 4;
+  repeated string static_prefixes = 5; // e.g. ["_next/static"]
+  int64 artifact_bytes = 6;
+}

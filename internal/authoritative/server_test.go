@@ -8,12 +8,17 @@ import (
 	"net"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/castlemilk/dns/internal/authoritative"
+	"github.com/castlemilk/dns/internal/telemetry"
 	"github.com/castlemilk/dns/internal/zone"
 	"github.com/miekg/dns"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestServeDNSAuthoritativeSemantics(t *testing.T) {
@@ -353,7 +358,102 @@ func TestCompileThenReplacePublishesOnlyValidatedSnapshot(t *testing.T) {
 	}
 }
 
-func newFixtureServer(t *testing.T) *authoritative.Server {
+func TestDNSMetricsDescribeProtocolNotQuestionName(t *testing.T) {
+	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown meter provider: %v", err)
+		}
+	})
+	metrics, err := telemetry.NewMetrics(provider.Meter("authority-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	server := newFixtureServer(t, metrics)
+	request := new(dns.Msg)
+	request.SetQuestion("missing.block.example.test.", dns.TypeA)
+	writer := &captureResponseWriter{network: "udp"}
+	server.ServeDNS(writer, request)
+
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	metricValue := authorityMetric(collected, "simpledns.dns.queries")
+	sum, ok := metricValue.Data.(metricdata.Sum[int64])
+	if !ok || len(sum.DataPoints) != 1 {
+		t.Fatalf("DNS query metric = %#v", metricValue.Data)
+	}
+	assertAuthorityAttribute(t, sum.DataPoints[0].Attributes, "network.transport", "udp")
+	assertAuthorityAttribute(t, sum.DataPoints[0].Attributes, "dns.question.type", "A")
+	assertAuthorityAttribute(t, sum.DataPoints[0].Attributes, "dns.response.code", "NXDOMAIN")
+	if strings.Contains(fmt.Sprintf("%#v", collected), "missing.block.example.test") {
+		t.Fatal("DNS qname leaked into metric data")
+	}
+}
+
+func TestDNSMetricsLabelUnsupportedEDNSVersionAsBADVERS(t *testing.T) {
+	t.Parallel()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown meter provider: %v", err)
+		}
+	})
+	metrics, err := telemetry.NewMetrics(provider.Meter("authority-test"))
+	if err != nil {
+		t.Fatalf("NewMetrics: %v", err)
+	}
+	server := newFixtureServer(t, metrics)
+	request := new(dns.Msg)
+	request.SetQuestion("www.example.test.", dns.TypeA)
+	request.SetEdns0(1232, false)
+	request.IsEdns0().SetVersion(1)
+	writer := &captureResponseWriter{network: "udp"}
+	server.ServeDNS(writer, request)
+	if writer.message == nil || writer.message.Rcode != dns.RcodeBadVers {
+		t.Fatalf("DNS response = %#v, want BADVERS", writer.message)
+	}
+
+	var collected metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &collected); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	metricValue := authorityMetric(collected, "simpledns.dns.queries")
+	sum, ok := metricValue.Data.(metricdata.Sum[int64])
+	if !ok || len(sum.DataPoints) != 1 {
+		t.Fatalf("DNS query metric = %#v", metricValue.Data)
+	}
+	assertAuthorityAttribute(t, sum.DataPoints[0].Attributes, "dns.response.code", "BADVERS")
+	if strings.Contains(fmt.Sprintf("%#v", sum.DataPoints[0].Attributes), "BADSIG") {
+		t.Fatal("unsupported EDNS version was mislabeled as BADSIG")
+	}
+}
+
+func authorityMetric(collected metricdata.ResourceMetrics, name string) *metricdata.Metrics {
+	for scopeIndex := range collected.ScopeMetrics {
+		for metricIndex := range collected.ScopeMetrics[scopeIndex].Metrics {
+			value := &collected.ScopeMetrics[scopeIndex].Metrics[metricIndex]
+			if value.Name == name {
+				return value
+			}
+		}
+	}
+	return &metricdata.Metrics{}
+}
+
+func assertAuthorityAttribute(t *testing.T, attributes attribute.Set, key, want string) {
+	t.Helper()
+	value, ok := attributes.Value(attribute.Key(key))
+	if !ok || value.AsString() != want {
+		t.Errorf("attribute %s = %q, %t; want %q", key, value.AsString(), ok, want)
+	}
+}
+
+func newFixtureServer(t *testing.T, metricSets ...*telemetry.Metrics) *authoritative.Server {
 	t.Helper()
 	now := time.Unix(1_800_900_000, 0).UTC()
 	store := openAuthoritativeStore(t, &now, "ns1.example.test")
@@ -389,7 +489,7 @@ func newFixtureServer(t *testing.T) *authoritative.Server {
 		}
 	}
 
-	server := authoritative.New(slog.New(slog.NewTextHandler(io.Discard, nil)), authoritative.DefaultMaxUDPSize)
+	server := authoritative.New(slog.New(slog.NewTextHandler(io.Discard, nil)), authoritative.DefaultMaxUDPSize, metricSets...)
 	if err := server.Replace([]zone.Zone{value}); err != nil {
 		t.Fatalf("Replace fixture snapshot: %v", err)
 	}

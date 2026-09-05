@@ -1,0 +1,64 @@
+{{- if .Values.observability.collector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-collector") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+  {{- with .Values.observability.collector.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  # Preserve the single-writer path for cumulative SDK streams across HTTP
+  # reconnects. Kubernetes fails over when the selected collector disappears.
+  sessionAffinity: ClientIP
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+---
+# Scrapers must discover every endpoint rather than scrape the load-balanced
+# OTLP ClusterIP: each collector replica owns an independent in-memory metric
+# set. Health stays pod-local for kubelet probes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "otel-metrics") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "otel-metrics") | nindent 4 }}
+  {{- if or .Values.observability.collector.prometheusAnnotations.enabled .Values.observability.collector.service.annotations }}
+  annotations:
+    {{- if .Values.observability.collector.prometheusAnnotations.enabled }}
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "8889"
+    {{- end }}
+    {{- with .Values.observability.collector.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "otel-collector") | nindent 4 }}
+  ports:
+    - name: telemetry
+      port: 8888
+      targetPort: telemetry
+      protocol: TCP
+    - name: prometheus
+      port: 8889
+      targetPort: prometheus
+      protocol: TCP
+{{- end }}

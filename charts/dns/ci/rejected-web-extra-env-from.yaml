@@ -1,0 +1,8 @@
+# Render-only fixture: a secretRef is refused for the same reason a
+# configMapRef is. The chart cannot see that the Secret carries HOSTING_API_URL
+# and HOSTING_API_TOKEN, which would turn on an engine platform.hosting.enabled
+# never configured.
+web:
+  extraEnvFrom:
+    - secretRef:
+        name: smuggled-engine-secret
