@@ -93,6 +93,19 @@ spec:
       # enabled false the facade reports hosting as not configured and the
       # console degrades to DNS only, which is the honest default.
       platform:
+        # Mail is staged but OFF, and turning it on needs two things this
+        # cluster does not have yet:
+        #   1. Block storage. The account is at its Vultr subscription limit —
+        #      dns-authority-1 and -2 have been Pending on exactly that — and the
+        #      mail StatefulSet claims a volume, so it would land the same way.
+        #   2. A dns-mail-engine Secret holding the admin token, created out of
+        #      band like dns-auth. The chart refuses to render without it rather
+        #      than emitting an empty Secret reference.
+        # Beyond the cluster: outbound 25 is blocked by many providers, the MX
+        # records must delegate to the published node addresses, and submission
+        # and POP3S need a certificate before either listener starts.
+        mail:
+          enabled: false
         hosting:
           enabled: true
           apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
