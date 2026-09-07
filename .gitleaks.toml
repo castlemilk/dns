@@ -23,7 +23,11 @@ Fixed, non-secret literals committed on purpose:
     transcript uses in place of the real one;
   - the invented Stripe test key in internal/app/platform_test.go, which is fed
     to the redacting logger purely to prove the logger removes it (the same test
-    also feeds an invented GitHub token and Stalwart key).
+    also feeds an invented GitHub token and Stalwart key);
+  - the maild integration suite's admin token, a fixed run of hex that only ever
+    authenticates the in-process server the test itself started. It cannot be
+    shortened to look less like a key: cmd/deephost-mail refuses to start on a
+    token under 32 characters, so a realistic fixture has to be this long.
 """
 regexTarget = "match"
 regexes = [
@@ -31,6 +35,7 @@ regexes = [
   '''sk_test_fake''',
   '''API_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
   '''sk_test_51AbCdEfGhIjKlMnOp''',
+  '''0123456789abcdef0123456789abcdef0123456789ab''',
 ]
 
 # A Stalwart API key is "API_" plus 38 base62 characters (mail-facts.md §2). The
