@@ -18,8 +18,16 @@ export type MailboxCreatedDialogProps = {
    * this component's props: it is never logged, stored or sent anywhere else.
    */
   password: string;
-  imapHost: string;
-  imapPort: number;
+  /**
+   * How this deployment's mail engine actually lets a client read mail, as the
+   * engine itself advertises it. Not a constant: an engine that speaks POP3 and
+   * no IMAP must not be labelled IMAP, or we send people to a port nothing
+   * listens on. Empty protocol means the engine advertises neither, and the row
+   * is omitted rather than guessed.
+   */
+  retrievalProtocol: string;
+  retrievalHost: string;
+  retrievalPort: number;
   smtpHost: string;
   smtpPort: number;
   open: boolean;
@@ -34,8 +42,9 @@ export type MailboxCreatedDialogProps = {
 export function MailboxCreatedDialog({
   address,
   password,
-  imapHost,
-  imapPort,
+  retrievalProtocol,
+  retrievalHost,
+  retrievalPort,
   smtpHost,
   smtpPort,
   open,
@@ -84,14 +93,24 @@ export function MailboxCreatedDialog({
         </div>
 
         <dl className="text-ui grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt className="text-muted-foreground">IMAP</dt>
-          <dd className="font-mono text-[13px]">
-            {imapHost}:{imapPort}
-          </dd>
-          <dt className="text-muted-foreground">SMTP</dt>
-          <dd className="font-mono text-[13px]">
-            {smtpHost}:{smtpPort}
-          </dd>
+          {retrievalProtocol === "" ? null : (
+            <>
+              <dt className="text-muted-foreground uppercase">
+                {retrievalProtocol}
+              </dt>
+              <dd className="font-mono text-[13px]">
+                {retrievalHost}:{retrievalPort}
+              </dd>
+            </>
+          )}
+          {smtpPort === 0 ? null : (
+            <>
+              <dt className="text-muted-foreground">Submission</dt>
+              <dd className="font-mono text-[13px]">
+                {smtpHost}:{smtpPort}
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">Username</dt>
           <dd className="font-mono text-[13px] break-all">{address}</dd>
         </dl>

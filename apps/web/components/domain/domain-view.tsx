@@ -955,8 +955,9 @@ function DomainDetail({
         <MailboxCreatedDialog
           address={engineDialog.result.mailbox?.address ?? ""}
           password={engineDialog.result.password}
-          imapHost={engineDialog.result.imapHost}
-          imapPort={engineDialog.result.imapPort}
+          retrievalProtocol={engineDialog.result.retrievalProtocol}
+          retrievalHost={engineDialog.result.retrievalHost}
+          retrievalPort={engineDialog.result.retrievalPort}
           smtpHost={engineDialog.result.smtpHost}
           smtpPort={engineDialog.result.smtpPort}
           open

@@ -28,8 +28,9 @@ export type EmailStepProps = {
 type Credentials = {
   address: string;
   password: string;
-  imapHost: string;
-  imapPort: number;
+  retrievalProtocol: string;
+  retrievalHost: string;
+  retrievalPort: number;
   smtpHost: string;
   smtpPort: number;
 };
@@ -104,8 +105,9 @@ export function EmailStep({ zone, onContinue, onSkip }: EmailStepProps) {
       setCreated({
         address: mailbox.mailbox?.address ?? `${local}@${zone.name}`,
         password: mailbox.password,
-        imapHost: mailbox.imapHost,
-        imapPort: mailbox.imapPort,
+        retrievalProtocol: mailbox.retrievalProtocol,
+        retrievalHost: mailbox.retrievalHost,
+        retrievalPort: mailbox.retrievalPort,
         smtpHost: mailbox.smtpHost,
         smtpPort: mailbox.smtpPort,
       });
@@ -331,8 +333,9 @@ export function EmailStep({ zone, onContinue, onSkip }: EmailStepProps) {
         <MailboxCreatedDialog
           address={created.address}
           password={created.password}
-          imapHost={created.imapHost}
-          imapPort={created.imapPort}
+          retrievalProtocol={created.retrievalProtocol}
+          retrievalHost={created.retrievalHost}
+          retrievalPort={created.retrievalPort}
           smtpHost={created.smtpHost}
           smtpPort={created.smtpPort}
           open
