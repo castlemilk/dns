@@ -11,6 +11,7 @@
     "authority",
     "web",
     "platform",
+    "mail",
     "observability",
     "nodePortService",
     "dnsService",
@@ -59,13 +60,17 @@
       "type": "object",
       "required": [
         "server",
-        "web"
+        "web",
+        "mail"
       ],
       "properties": {
         "server": {
           "$ref": "#/definitions/image"
         },
         "web": {
+          "$ref": "#/definitions/image"
+        },
+        "mail": {
           "$ref": "#/definitions/image"
         }
       },
@@ -105,6 +110,9 @@
     },
     "platform": {
       "$ref": "#/definitions/platform"
+    },
+    "mail": {
+      "$ref": "#/definitions/mail"
     },
     "observability": {
       "$ref": "#/definitions/observability"
@@ -795,6 +803,278 @@
         }
       },
       "additionalProperties": false
+    },
+    "mail": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/podSettings"
+        },
+        {
+          "type": "object",
+          "required": [
+            "enabled",
+            "replicaCount",
+            "extraEnv",
+            "listeners",
+            "service",
+            "externalAddresses",
+            "persistence",
+            "dataDir",
+            "tls",
+            "auth",
+            "delivery",
+            "limits",
+            "podAnnotations",
+            "podLabels",
+            "podSecurityContext",
+            "securityContext",
+            "resources",
+            "startupProbe",
+            "livenessProbe",
+            "readinessProbe",
+            "terminationGracePeriodSeconds",
+            "nodeSelector",
+            "affinity",
+            "tolerations"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "replicaCount": {
+              "type": "integer",
+              "const": 1
+            },
+            "extraEnv": {
+              "$ref": "#/definitions/mailExtraEnv"
+            },
+            "listeners": {
+              "$ref": "#/definitions/mailListeners"
+            },
+            "service": {
+              "$ref": "#/definitions/httpService"
+            },
+            "externalAddresses": {
+              "$ref": "#/definitions/externalIPService"
+            },
+            "persistence": {
+              "$ref": "#/definitions/persistence"
+            },
+            "dataDir": {
+              "type": "string",
+              "pattern": "^/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+            },
+            "tls": {
+              "type": "object",
+              "required": [
+                "existingSecret",
+                "certKey",
+                "keyKey"
+              ],
+              "properties": {
+                "existingSecret": {
+                  "$ref": "#/definitions/optionalKubernetesName"
+                },
+                "certKey": {
+                  "$ref": "#/definitions/secretKey"
+                },
+                "keyKey": {
+                  "$ref": "#/definitions/secretKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            "auth": {
+              "type": "object",
+              "required": [
+                "existingSecret",
+                "adminTokenKey"
+              ],
+              "properties": {
+                "existingSecret": {
+                  "$ref": "#/definitions/optionalKubernetesName"
+                },
+                "adminTokenKey": {
+                  "$ref": "#/definitions/optionalSecretKey"
+                }
+              },
+              "additionalProperties": false
+            },
+            "delivery": {
+              "type": "object",
+              "required": [
+                "resolvers",
+                "dnsTimeout",
+                "relayPort",
+                "queueInterval",
+                "queueBaseBackoff",
+                "queueMaxBackoff",
+                "queueLifetime",
+                "queueConcurrency"
+              ],
+              "properties": {
+                "resolvers": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 2,
+                    "pattern": "^[A-Za-z0-9._:\\[\\]-]+$"
+                  }
+                },
+                "dnsTimeout": {
+                  "$ref": "#/definitions/duration"
+                },
+                "relayPort": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "queueInterval": {
+                  "$ref": "#/definitions/duration"
+                },
+                "queueBaseBackoff": {
+                  "$ref": "#/definitions/duration"
+                },
+                "queueMaxBackoff": {
+                  "$ref": "#/definitions/duration"
+                },
+                "queueLifetime": {
+                  "$ref": "#/definitions/duration"
+                },
+                "queueConcurrency": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 256
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "maxSessions",
+                "maxSessionsPerIP",
+                "maxMessageBytes",
+                "maxMessageMemory",
+                "sessionTimeout",
+                "shutdownGrace"
+              ],
+              "properties": {
+                "maxSessions": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "maxSessionsPerIP": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "maxMessageBytes": {
+                  "type": "integer",
+                  "minimum": 1048576,
+                  "maximum": 134217728
+                },
+                "maxMessageMemory": {
+                  "type": "integer",
+                  "minimum": 16777216,
+                  "maximum": 4294967296
+                },
+                "sessionTimeout": {
+                  "$ref": "#/definitions/duration"
+                },
+                "shutdownGrace": {
+                  "$ref": "#/definitions/duration"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "mailExtraEnv": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/componentExtraEnv"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "not": {
+                  "pattern": "^MAILD_"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "mailListeners": {
+      "type": "object",
+      "required": [
+        "api",
+        "smtp",
+        "submission",
+        "submissions",
+        "pop3",
+        "pop3s"
+      ],
+      "properties": {
+        "api": {
+          "type": "object",
+          "required": [
+            "port"
+          ],
+          "properties": {
+            "port": {
+              "$ref": "#/definitions/unprivilegedPort"
+            }
+          },
+          "additionalProperties": false
+        },
+        "smtp": {
+          "$ref": "#/definitions/mailListener"
+        },
+        "submission": {
+          "$ref": "#/definitions/mailListener"
+        },
+        "submissions": {
+          "$ref": "#/definitions/mailListener"
+        },
+        "pop3": {
+          "$ref": "#/definitions/mailListener"
+        },
+        "pop3s": {
+          "$ref": "#/definitions/mailListener"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mailListener": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "port"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "$ref": "#/definitions/unprivilegedPort"
+        }
+      },
+      "additionalProperties": false
+    },
+    "unprivilegedPort": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535
     },
     "engineApiUrl": {
       "anyOf": [

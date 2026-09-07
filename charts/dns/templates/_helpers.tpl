@@ -414,6 +414,23 @@ that runs in a production render. Expects field and url.
 {{- fail "platform.hosting.appsSuffix requires platform.hosting.appsTlsSecret; an automatic host is never registered in per-host certificate mode" -}}
 {{- end -}}
 {{- end -}}
+{{/*
+The mail WORKLOAD is a separate switch from the facade binding above: mail.enabled
+deploys the server, platform.mail.enabled tells the control plane to use it. Turning
+on only the workload used to render a projected Secret volume with an empty name,
+which the API server rejects — and helm reports nothing, because an empty string is
+valid YAML. Require the token Secret from whichever of the two places supplies it.
+*/}}
+{{- if .Values.mail.enabled -}}
+{{- $mailSecret := default .Values.platform.mail.existingSecret .Values.mail.auth.existingSecret -}}
+{{- if not $mailSecret -}}
+{{- fail "mail.enabled requires mail.auth.existingSecret (or platform.mail.existingSecret); the chart never renders engine tokens" -}}
+{{- end -}}
+{{- $mailKey := default .Values.platform.mail.apiTokenKey .Values.mail.auth.adminTokenKey -}}
+{{- if not $mailKey -}}
+{{- fail "mail.enabled requires mail.auth.adminTokenKey (or platform.mail.apiTokenKey)" -}}
+{{- end -}}
+{{- end -}}
 {{- if $platform.mail.enabled -}}
 {{- if not $platform.mail.apiUrl -}}
 {{- fail "platform.mail.enabled requires platform.mail.apiUrl" -}}

@@ -1,0 +1,81 @@
+{{- if and .Values.mail.enabled .Values.mail.externalAddresses.enabled }}
+{{- $listeners := .Values.mail.listeners }}
+{{- $tls := .Values.mail.tls.existingSecret }}
+# Mail published directly on node addresses, the same way authoritative DNS is.
+# external-ip-service.yaml records why, and the reason is unchanged here: a
+# Vultr load balancer refuses a second forwarding rule on a frontend port that
+# is already in use, so the shared gateway LB cannot also carry SMTP, and a
+# dedicated one would need four more frontend ports on the address the MX record
+# names. hostPort would work and is forbidden by both the baseline and the
+# restricted Pod Security level, which this namespace enforces. A ClusterIP
+# Service with .spec.externalIPs keeps the pod restricted, needs no load
+# balancer, and puts the server on an address an MX record can point at.
+#
+# Opt-in for the same reason externalIPService is: each address must already
+# route to a node of this cluster. kube-proxy then accepts traffic for it on
+# every node and forwards it to the ready mail pod wherever it is scheduled, so
+# the address does not have to belong to the node the pod runs on. It does have
+# to be the address the MX resolves to and the address whose PTR record names
+# platform.mail.hostname — that PTR is set at the provider, never here, and a
+# large receiver rejects mail from a host whose forward and reverse names
+# disagree.
+#
+# EVERY PUBLISHED PORT IS A WELL-KNOWN PORT MAPPED TO A HIGH targetPort. The
+# container cannot bind below 1024 under the restricted Pod Security level —
+# capabilities.drop [ALL] denies NET_BIND_SERVICE — so the Service does the
+# translation and the sender still connects to 25. The targets are named rather
+# than numbered so the two files cannot drift out of agreement.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "mail-external") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "mail") | nindent 4 }}
+  {{- with .Values.mail.externalAddresses.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  externalIPs:
+    {{- toYaml .Values.mail.externalAddresses.addresses | nindent 4 }}
+  ports:
+    {{- if $listeners.smtp.enabled }}
+    - name: smtp
+      port: 25
+      targetPort: smtp
+      protocol: TCP
+    {{- end }}
+    {{- if $listeners.submission.enabled }}
+    - name: submission
+      port: 587
+      targetPort: submission
+      protocol: TCP
+    {{- end }}
+    {{- if and $listeners.submissions.enabled $tls }}
+    # The implicit-TLS ports exist only when a certificate does: without
+    # mail.tls.existingSecret the listeners behind them never start, and a
+    # published port that fails every handshake is worse than an absent one
+    # because a client reads it as a broken server rather than a missing
+    # certificate.
+    - name: submissions
+      port: 465
+      targetPort: submissions
+      protocol: TCP
+    {{- end }}
+    {{- if $listeners.pop3.enabled }}
+    - name: pop3
+      port: 110
+      targetPort: pop3
+      protocol: TCP
+    {{- end }}
+    {{- if and $listeners.pop3s.enabled $tls }}
+    - name: pop3s
+      port: 995
+      targetPort: pop3s
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "mail") | nindent 4 }}
+{{- end }}

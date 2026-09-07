@@ -17,6 +17,13 @@ images:
     tag: latest
     digest: ""
     pullPolicy: IfNotPresent
+  # The mail engine, published by the same release workflow as the two above.
+  # It is pulled only when mail.enabled is true.
+  mail:
+    repository: ghcr.io/castlemilk/dns-mail
+    tag: latest
+    digest: ""
+    pullPolicy: IfNotPresent
 
 # The chart never creates this Secret. Both keys must contain independently
 # generated bearer tokens. Control reads both; authorities read only the
@@ -358,6 +365,255 @@ platform:
     # /billing/v1/stripe/webhook path. It requires httpRoute.enabled.
     webhookRoute:
       enabled: false
+
+# The mail engine itself: the SMTP, submission and POP3 listeners plus the
+# management API the block above drives. platform.mail configures the control
+# plane's client; this block deploys the server that client talks to. They are
+# deliberately two switches: an operator can stand this server up and exercise
+# it before any customer-facing facade points at it, and platform.mail can
+# equally point at a mail server this chart did not deploy.
+#
+# It is off by default, and merging it changes nothing in a running cluster,
+# for three reasons that are all still true today:
+#   * it wants a block volume, and this Vultr account is at its block-storage
+#     subscription limit — dns-authority-1 and -2 have been Pending on exactly
+#     that limit for over a day, and this PVC would join them;
+#   * a host with no MX delegated to it, no TLS certificate and no PTR record
+#     is not a mail server, it is a future spam listing; and
+#   * outbound TCP/25 is blocked by default at most providers, Vultr included,
+#     so this server cannot deliver anything until that block is lifted.
+# docs/production-launch.md, "Bringing up mail", is the order to do these in.
+mail:
+  enabled: false
+  # One writer, always. The maildir and the bbolt store are one directory on
+  # one ReadWriteOnce volume, and there is no leader election: a second replica
+  # would open the same store twice. Availability comes from SMTP itself —
+  # a sender retries a refused connection for days.
+  replicaCount: 1
+  # Custom variables only. The chart owns DNS_*, OTEL_*, HOSTING_*, MAIL_*,
+  # MAILD_*, STRIPE_*, BILLING_*, ACTIVITY_*, POD_NAMESPACE, and POD_NAME
+  # runtime settings and rejects attempts to shadow them here. MAILD_ is named
+  # separately because it is not covered by MAIL_: without it, a MAILD_SMTP_ADDR
+  # entry could move a listener onto a port this pod cannot bind, or a
+  # MAILD_ADMIN_TOKEN entry could replace the token the control plane was given,
+  # and the engine would answer 401 to its only client. Everything the server
+  # reads is typed below instead. There is deliberately no extraEnvFrom: the
+  # chart cannot read the keys inside a referenced Secret or ConfigMap, so an
+  # envFrom list is a name filter the chart cannot enforce.
+  extraEnv: []
+  # Listener ports inside the container.
+  #
+  # Every one of them is above 1023, and that is not a preference. This
+  # namespace enforces pod-security.kubernetes.io/enforce=restricted, which
+  # requires capabilities.drop [ALL]; without NET_BIND_SERVICE a non-root
+  # process cannot bind 25, 465, 587, 110 or 995 at all, so the binary's own
+  # defaults would fail to start here. The Services below publish the
+  # well-known port and target the high port, so nothing outside the pod sees
+  # the difference. These values match the defaults baked into Dockerfile.mail;
+  # change the two together or `docker run` and the chart disagree.
+  #
+  # A listener with enabled=false is not started at all: the chart renders an
+  # empty address, which the server reads as "do not listen", and the port then
+  # does not exist rather than existing and refusing.
+  listeners:
+    # The management API. The image binds it to loopback, which is the right
+    # default for `docker run`; the chart binds it to the pod so the ClusterIP
+    # Service below can reach it. That Service is never published outside the
+    # cluster: this endpoint is the whole mail estate behind one bearer.
+    api:
+      port: 20080
+    # Inbound mail from the internet. Disabling it makes this a send-only
+    # server; nothing delivered to the MX would be accepted.
+    smtp:
+      enabled: true
+      port: 1025
+    # Submission with STARTTLS. It carries mailbox passwords, so it is only
+    # honest with tls.existingSecret set — see the refusal noted there.
+    submission:
+      enabled: true
+      port: 1587
+    # Submission with implicit TLS. It does not start without a certificate.
+    submissions:
+      enabled: true
+      port: 1465
+    # Cleartext POP3 with STLS. Off by default: a client that never issues
+    # STLS sends the mailbox password in the clear and no server-side setting
+    # can detect that it did. pop3s below is the same protocol with TLS from
+    # the first byte, which is what every current client uses.
+    pop3:
+      enabled: false
+      port: 1110
+    pop3s:
+      enabled: true
+      port: 1995
+  # The in-cluster management Service. platform.mail.apiUrl must name it, and
+  # it stays ClusterIP: the management API is the only path to every mailbox on
+  # the host, so it is reachable from the control plane and from nothing else.
+  service:
+    annotations: {}
+    port: 20080
+  # Mail published directly on node addresses, exactly as authoritative DNS is
+  # (see charts/dns/templates/external-ip-service.yaml) and for the same
+  # settled reason: a Vultr load balancer refuses a second forwarding rule on a
+  # frontend port already in use, so the shared gateway load balancer cannot
+  # also carry SMTP, and hostPort is forbidden by the restricted Pod Security
+  # level this namespace enforces. Opt-in, exactly like externalIPService.
+  #
+  # Every address must already route to a node of this cluster, must be the
+  # address the published MX resolves to, and must have a PTR record naming
+  # platform.mail.hostname. That PTR is set at the provider, never here, and
+  # large receivers reject mail from a host whose forward and reverse names
+  # disagree — so publishing without it is worse than not publishing.
+  externalAddresses:
+    enabled: false
+    addresses: []
+    annotations: {}
+  # The maildir, the outbound queue and the bbolt store, on one volume.
+  #
+  # THIS IS WHY THE COMPONENT DEFAULTS TO DISABLED. The Vultr account is at its
+  # block-storage subscription limit, so this claim binds nothing and the pod
+  # sits Pending, exactly as dns-authority-1 and -2 do today.
+  #
+  # Use a retaining storage class: a reclaimed mail volume is deleted mail, and
+  # unlike a zone snapshot there is no other copy. Size it for what the
+  # mailboxes actually hold plus the queue — platform.mail.defaultQuotaBytes is
+  # a per-mailbox ceiling, not a reservation, so the sum of quotas is an upper
+  # bound and not a target. Filling it makes the server refuse deliveries,
+  # which senders retry, rather than lose them.
+  persistence:
+    enabled: true
+    existingClaim: ""
+    annotations: {}
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    storageClass: ""
+  # Where that volume is mounted, and the server's --data-dir. It is the
+  # directory Dockerfile.mail creates owned by uid 65532, so the mount lands on
+  # a path the process can already write.
+  dataDir: /var/lib/deephost-mail
+  # One certificate serves STARTTLS on 25/587/110 and the implicit-TLS
+  # listeners on 465/995. "" means the server starts with none: it will not
+  # offer STARTTLS, the implicit-TLS listeners do not start, and submission
+  # would carry mailbox passwords in the clear — so a production release with
+  # submission enabled must set this. Name an existing kubernetes.io/tls Secret
+  # covering platform.mail.hostname; the tls block below can issue one by
+  # adding that name to tls.dnsNames, which needs the mail host to resolve
+  # first.
+  tls:
+    existingSecret: ""
+    certKey: tls.crt
+    keyKey: tls.key
+  # The bearer the management API requires. It must be byte-for-byte the token
+  # the control plane sends as MAIL_API_TOKEN, so by default this is not a
+  # second value at all: "" reads platform.mail.existingSecret and
+  # platform.mail.apiTokenKey — one Secret key, two readers, nothing to drift.
+  # Name a different Secret only while rotating, and only for as long as the
+  # rotation lasts.
+  #
+  # The token is mounted as a file and passed with --admin-token-file rather
+  # than through the environment: an environment variable is readable in /proc
+  # and lands in any crash dump, and a command-line argument is visible in the
+  # process table.
+  auth:
+    existingSecret: ""
+    adminTokenKey: ""
+  # Outbound delivery. The queue runner resolves each recipient's MX itself, so
+  # without a recursive resolver this server cannot send at all and refuses to
+  # start. Empty uses the pod's /etc/resolv.conf, which is the cluster's
+  # CoreDNS and does resolve public names; an explicit list makes delivery
+  # independent of cluster DNS. Never point it at this chart's own
+  # authorities — they answer only for the zones they host and never recurse.
+  delivery:
+    resolvers: []
+    dnsTimeout: 5s
+    # The port every MX is dialled on. 25 is the protocol. A provider that
+    # blocks outbound 25 is not worked around by changing this number: the
+    # block is lifted, or mail is relayed through a host that can send.
+    relayPort: 25
+    queueInterval: 1m
+    queueBaseBackoff: 5m
+    queueMaxBackoff: 2h
+    # How long a message may keep failing before it bounces. Five days is the
+    # long-standing convention, and it is what a sender expects when the
+    # receiving side is having a bad week.
+    queueLifetime: 120h
+    queueConcurrency: 8
+  # One budget shared by every listener, so the same ceiling locks out a
+  # password guesser whichever port they arrive on.
+  limits:
+    maxSessions: 256
+    maxSessionsPerIP: 16
+    # Announced to peers in the EHLO SIZE capability, so a sender is told
+    # before it spends bandwidth. 25 MiB is what the large providers accept.
+    maxMessageBytes: 26214400
+    # The ceiling on message bodies held in memory at once. Keep it below
+    # resources.limits.memory: above it, the kubelet OOM-kills the pod and
+    # every session in flight instead of the server refusing one message.
+    maxMessageMemory: 268435456
+    sessionTimeout: 5m
+    # How long a stop waits for sessions in flight. It must stay below
+    # terminationGracePeriodSeconds or the kubelet SIGKILLs the process
+    # part-way through accepting a message.
+    shutdownGrace: 20s
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  # No capabilities are added, and none can be: restricted Pod Security
+  # requires drop [ALL], which is the whole reason the listeners above are on
+  # high ports.
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+  # Mail is memory-hungrier than the DNS components because a message body is
+  # buffered while it is scanned and signed; the limit must stay above
+  # limits.maxMessageMemory.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # The management API has no unauthenticated endpoint — the bearer is checked
+  # before the path is even looked at, so an anonymous GET /healthz is a 401 —
+  # which is why these are TCP checks and not httpGet. They cost nothing in
+  # fidelity: this server binds all-or-nothing, exiting rather than serving a
+  # subset, so one open port is a truthful answer for all of them.
+  startupProbe:
+    tcpSocket:
+      port: api
+    failureThreshold: 30
+    periodSeconds: 2
+    timeoutSeconds: 2
+  livenessProbe:
+    tcpSocket:
+      port: api
+    failureThreshold: 6
+    periodSeconds: 20
+    timeoutSeconds: 5
+  readinessProbe:
+    tcpSocket:
+      port: api
+    failureThreshold: 3
+    periodSeconds: 10
+    timeoutSeconds: 2
+  # Longer than limits.shutdownGrace above, so a clean stop finishes the
+  # sessions it is draining before the kubelet loses patience.
+  terminationGracePeriodSeconds: 45
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # OpenTelemetry is the single instrumentation egress path for every
 # application component. When the in-cluster collector is enabled, an empty

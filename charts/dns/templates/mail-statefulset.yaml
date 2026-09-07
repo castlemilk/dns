@@ -1,0 +1,315 @@
+{{- if .Values.mail.enabled }}
+{{- $listeners := .Values.mail.listeners }}
+{{- $tls := .Values.mail.tls.existingSecret }}
+{{/*
+The admin bearer is one value with two readers. The control plane sends it as
+MAIL_API_TOKEN from platform.mail; the server requires the same bytes back. An
+empty mail.auth reads that same Secret key rather than a second copy of the
+token, so the two cannot drift into a permanent 401 between them; naming a
+different Secret is for a rotation window only.
+*/}}
+{{- $tokenSecret := default .Values.platform.mail.existingSecret .Values.mail.auth.existingSecret }}
+{{- $tokenKey := default .Values.platform.mail.apiTokenKey .Values.mail.auth.adminTokenKey }}
+# The Deep Hosting mail server: the SMTP, submission and POP3 listeners, and
+# the management API the control plane's mail facade drives.
+#
+# ONE REPLICA, ALWAYS. The maildir, the outbound queue and the bbolt store are
+# one directory on one ReadWriteOnce volume, and maild takes no lock a second
+# process would respect. Two pods on a shared filesystem would double-deliver
+# inbound mail and race the queue runner on the same spool file; two pods on
+# the RWO claim cannot both schedule in the first place. Scaling mail means a
+# second server with its own volume and its own MX record, never a second
+# replica here — which is why mail.replicaCount exists only so dns.validate can
+# refuse anything but 1. Availability is not lost by this: a sender retries a
+# refused SMTP connection for days.
+#
+# A StatefulSet rather than a Deployment for the update behaviour as much as
+# the claim. A StatefulSet rolling update terminates the old pod before it
+# creates the new one, so the volume is detached before the replacement asks
+# for it; a Deployment would deadlock on the attach unless it also carried
+# strategy Recreate, and would still lose the stable claim name.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "mail") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "mail") | nindent 4 }}
+spec:
+  serviceName: {{ include "dns.resourceName" (dict "root" . "suffix" "mail") }}
+  replicas: {{ .Values.mail.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  updateStrategy:
+    type: RollingUpdate
+  {{- if and .Values.mail.persistence.enabled (not .Values.mail.persistence.existingClaim) }}
+  # Mail is the one state in this chart that cannot be rebuilt from somewhere
+  # else: a zone snapshot can be re-fetched from control, a deleted mail volume
+  # is deleted mail. Retain on both, whatever the storage class would do.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dns.selectorLabels" (dict "root" . "component" "mail") | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.mail.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- with .Values.mail.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- include "dns.labels" (dict "root" . "component" "mail") | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.mail.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mail.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mail.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mail.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Must exceed mail.limits.shutdownGrace, the time the server itself waits
+      # for sessions in flight. If the kubelet's timer is the shorter one the
+      # process is killed mid-DATA on a message it had already accepted, and
+      # the sender retries a message the recipient will now receive twice.
+      terminationGracePeriodSeconds: {{ .Values.mail.terminationGracePeriodSeconds }}
+      containers:
+        - name: mail
+          image: {{ include "dns.image" .Values.images.mail | quote }}
+          imagePullPolicy: {{ .Values.images.mail.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.mail.securityContext | nindent 12 }}
+          # Every containerPort is above 1023. That is a constraint, not a
+          # choice: this namespace enforces the restricted Pod Security level,
+          # which requires capabilities.drop [ALL], and without NET_BIND_SERVICE
+          # a process running as uid 65532 cannot bind 25, 465, 587, 110 or 995
+          # at all. mail-external-service.yaml maps each well-known port onto
+          # the high port beside it, so a sender still connects to 25.
+          ports:
+            - name: api
+              containerPort: {{ $listeners.api.port }}
+              protocol: TCP
+            {{- if $listeners.smtp.enabled }}
+            - name: smtp
+              containerPort: {{ $listeners.smtp.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if $listeners.submission.enabled }}
+            - name: submission
+              containerPort: {{ $listeners.submission.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if and $listeners.submissions.enabled $tls }}
+            - name: submissions
+              containerPort: {{ $listeners.submissions.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if $listeners.pop3.enabled }}
+            - name: pop3
+              containerPort: {{ $listeners.pop3.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if and $listeners.pop3s.enabled $tls }}
+            - name: pop3s
+              containerPort: {{ $listeners.pop3s.port }}
+              protocol: TCP
+            {{- end }}
+          # Readiness here is "the listeners are bound", and it is measured by a
+          # TCP connect because the server publishes no unauthenticated health
+          # endpoint on purpose: /jmap and /api/account both sit behind the
+          # admin bearer, so an HTTP probe would either have to carry the token
+          # or read a permanent 401 as failure. Every listener is bound before
+          # the process serves anything and a failed bind is fatal, so a socket
+          # that accepts is the honest signal that the whole server came up.
+          startupProbe:
+            {{- toYaml .Values.mail.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.mail.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.mail.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.mail.resources | nindent 12 }}
+          env:
+            # Identity is read from platform.mail rather than restated here: the
+            # name this server gives in EHLO is the name the MX record, the PTR
+            # record and the control plane's MAIL_HOSTNAME all have to agree on,
+            # and one value is the only way to keep four things equal.
+            - name: MAILD_HOSTNAME
+              value: {{ .Values.platform.mail.hostname | quote }}
+            # The bearer arrives as a file, never as MAILD_ADMIN_TOKEN and never
+            # as an argument: an environment variable is readable from /proc and
+            # lands in a crash dump, and a command line is in the process table.
+            - name: MAILD_ADMIN_TOKEN_FILE
+              value: "/etc/deephost-mail/admin-token"
+            - name: MAILD_DATA_DIR
+              value: {{ .Values.mail.dataDir | quote }}
+            # The image binds the management API to loopback, which is right for
+            # `docker run` and wrong here: the control plane reaches it through
+            # the ClusterIP Service, so it has to accept on the pod address.
+            # Nothing outside the cluster can route to it — that Service is
+            # ClusterIP, and the external Service publishes mail ports only.
+            - name: MAILD_API_ADDR
+              value: {{ printf ":%v" $listeners.api.port | quote }}
+            # An empty address is the documented way to disable a listener, and
+            # the server obeys an empty variable rather than falling back to its
+            # own default. A port that is off therefore does not exist, instead
+            # of existing and refusing every connection.
+            - name: MAILD_SMTP_ADDR
+              value: {{ if $listeners.smtp.enabled }}{{ printf ":%v" $listeners.smtp.port | quote }}{{ else }}""{{ end }}
+            - name: MAILD_SUBMISSION_ADDR
+              value: {{ if $listeners.submission.enabled }}{{ printf ":%v" $listeners.submission.port | quote }}{{ else }}""{{ end }}
+            - name: MAILD_POP3_ADDR
+              value: {{ if $listeners.pop3.enabled }}{{ printf ":%v" $listeners.pop3.port | quote }}{{ else }}""{{ end }}
+            {{- if $tls }}
+            - name: MAILD_SUBMISSIONS_ADDR
+              value: {{ if $listeners.submissions.enabled }}{{ printf ":%v" $listeners.submissions.port | quote }}{{ else }}""{{ end }}
+            - name: MAILD_POP3S_ADDR
+              value: {{ if $listeners.pop3s.enabled }}{{ printf ":%v" $listeners.pop3s.port | quote }}{{ else }}""{{ end }}
+            # The two PEMs are projected to fixed names beside the token, so
+            # the paths here do not have to restate mail.tls.certKey.
+            - name: MAILD_TLS_CERT
+              value: "/etc/deephost-mail/tls/cert.pem"
+            - name: MAILD_TLS_KEY
+              value: "/etc/deephost-mail/tls/key.pem"
+            {{- else }}
+            # Without a certificate the implicit-TLS listeners cannot start at
+            # all and STARTTLS cannot be offered, so both addresses are emptied
+            # whatever mail.listeners says. Publishing 465 or 995 in that state
+            # would give a client a connection that fails the handshake, which
+            # it reports as a broken server rather than a missing certificate.
+            - name: MAILD_SUBMISSIONS_ADDR
+              value: ""
+            - name: MAILD_POP3S_ADDR
+              value: ""
+            {{- end }}
+            {{- with .Values.mail.delivery.resolvers }}
+            # Outbound MX lookups. Empty leaves the server on /etc/resolv.conf,
+            # which in a pod is the cluster resolver forwarding upstream.
+            - name: MAILD_DNS_SERVERS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            - name: MAILD_DNS_TIMEOUT
+              value: {{ .Values.mail.delivery.dnsTimeout | quote }}
+            - name: MAILD_RELAY_PORT
+              value: {{ printf "%v" .Values.mail.delivery.relayPort | quote }}
+            - name: MAILD_QUEUE_INTERVAL
+              value: {{ .Values.mail.delivery.queueInterval | quote }}
+            - name: MAILD_QUEUE_BASE_BACKOFF
+              value: {{ .Values.mail.delivery.queueBaseBackoff | quote }}
+            - name: MAILD_QUEUE_MAX_BACKOFF
+              value: {{ .Values.mail.delivery.queueMaxBackoff | quote }}
+            - name: MAILD_QUEUE_LIFETIME
+              value: {{ .Values.mail.delivery.queueLifetime | quote }}
+            - name: MAILD_QUEUE_CONCURRENCY
+              value: {{ printf "%d" (int64 .Values.mail.delivery.queueConcurrency) | quote }}
+            - name: MAILD_MAX_SESSIONS
+              value: {{ printf "%d" (int64 .Values.mail.limits.maxSessions) | quote }}
+            - name: MAILD_MAX_SESSIONS_PER_IP
+              value: {{ printf "%d" (int64 .Values.mail.limits.maxSessionsPerIP) | quote }}
+            - name: MAILD_MAX_MESSAGE_BYTES
+              value: {{ printf "%d" (int64 .Values.mail.limits.maxMessageBytes) | quote }}
+            # The ceiling on message bodies held in memory at once. It is a
+            # sibling of resources.limits.memory: raising one without the other
+            # is how this pod gets OOMKilled mid-delivery.
+            - name: MAILD_MAX_MESSAGE_MEMORY
+              value: {{ printf "%d" (int64 .Values.mail.limits.maxMessageMemory) | quote }}
+            - name: MAILD_SESSION_TIMEOUT
+              value: {{ .Values.mail.limits.sessionTimeout | quote }}
+            - name: MAILD_SHUTDOWN_GRACE
+              value: {{ .Values.mail.limits.shutdownGrace | quote }}
+            - name: MAILD_LOG_FORMAT
+              value: {{ ternary "json" "text" .Values.production | quote }}
+            {{- with .Values.mail.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.mail.dataDir | quote }}
+            - name: credentials
+              mountPath: /etc/deephost-mail
+              readOnly: true
+            # securityContext.readOnlyRootFilesystem is true, so the one
+            # writable path outside the data volume has to be provided.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # One projected volume rather than a Secret volume per credential. The
+        # certificate has to sit under the directory the token is in, and a
+        # second volumeMount nested inside the first would be a mount into a
+        # read-only tmpfs the kubelet populates itself. Projecting both Secrets
+        # into one tree puts the files where the flags expect them with a single
+        # mount, and lets the PEMs take fixed names whatever keys the Secret
+        # happens to use.
+        - name: credentials
+          projected:
+            # 0440, not 0400: these files are owned root:fsGroup, so a mode
+            # without the group bit is unreadable by the uid that has to read
+            # them, and the server would exit 2 before it bound anything.
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ $tokenSecret }}
+                  items:
+                    - key: {{ $tokenKey }}
+                      path: admin-token
+              {{- if $tls }}
+              - secret:
+                  name: {{ $tls }}
+                  items:
+                    - key: {{ .Values.mail.tls.certKey }}
+                      path: tls/cert.pem
+                    - key: {{ .Values.mail.tls.keyKey }}
+                      path: tls/key.pem
+              {{- end }}
+        {{- if .Values.mail.persistence.enabled }}
+        {{- with .Values.mail.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ . }}
+        {{- end }}
+        {{- else }}
+        # A test and demo shape only: the maildir, the queue and the store go
+        # with the pod. Nothing that has accepted mail for someone should run
+        # this way — see the warning above mail.persistence in values.yaml.
+        - name: data
+          emptyDir: {}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+  {{- if and .Values.mail.persistence.enabled (not .Values.mail.persistence.existingClaim) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "dns.labels" (dict "root" . "component" "mail-data") | nindent 10 }}
+        {{- with .Values.mail.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.mail.persistence.accessModes | nindent 10 }}
+        {{- with .Values.mail.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.mail.persistence.size }}
+  {{- end }}
+{{- end }}

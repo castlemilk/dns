@@ -38,6 +38,9 @@ jobs:
           - name: web
             dockerfile: apps/web/Dockerfile
             image_suffix: -web
+          - name: mail
+            dockerfile: Dockerfile.mail
+            image_suffix: -mail
     steps:
       - name: Checkout validated revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

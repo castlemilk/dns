@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1.7
+
+FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
+
+ENV GOTOOLCHAIN=auto
+
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    go mod download
+
+COPY LICENSE ./LICENSE
+COPY cmd ./cmd
+COPY gen/go ./gen/go
+COPY internal ./internal
+COPY tools/collect-go-licenses ./tools/collect-go-licenses
+
+# The data directory is created here, empty, only so that the next stage can
+# copy it in owned by the non-root uid. It carries no state: the maildir and the
+# bbolt store are written at runtime into whatever volume the chart mounts over
+# this path. An image that shipped a mailbox would be a data leak on every pull.
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/deephost-mail ./cmd/deephost-mail && \
+    go run ./tools/collect-go-licenses \
+      -out /out/licenses \
+      -project-license ./LICENSE \
+      -target ./cmd/deephost-mail && \
+    mkdir -p /out/var/lib/deephost-mail
+
+FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
+
+WORKDIR /
+
+COPY --from=builder /out/deephost-mail /deephost-mail
+COPY --from=builder --chown=65532:65532 /out/var/lib/deephost-mail /var/lib/deephost-mail
+COPY --from=builder /out/licenses /licenses
+
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+USER 65532:65532
+
+# The listeners are moved off their well-known ports because this image runs as
+# uid 65532 with every capability dropped, which is what the namespace's
+# restricted Pod Security level requires. Without NET_BIND_SERVICE the process
+# cannot bind 25, 465, 587, 110 or 995 at all, so the binary's own defaults
+# would fail to start here. A Service maps each well-known port to the high port
+# below, and the chart sets the same variables explicitly; these values only
+# make `docker run` of this image work the same way.
+#
+# Exactly the privileged listeners are moved and nothing else. MAILD_API_ADDR is
+# deliberately left alone: its default is already unprivileged, and its loopback
+# binding is a safety property of the binary that only a deployment which needs
+# the management API reachable should widen.
+ENV MAILD_SMTP_ADDR=:1025 \
+    MAILD_SUBMISSION_ADDR=:1587 \
+    MAILD_SUBMISSIONS_ADDR=:1465 \
+    MAILD_POP3_ADDR=:1110 \
+    MAILD_POP3S_ADDR=:1995
+
+EXPOSE 1025/tcp 1465/tcp 1587/tcp 1110/tcp 1995/tcp 20080/tcp
+
+ENTRYPOINT ["/deephost-mail"]
