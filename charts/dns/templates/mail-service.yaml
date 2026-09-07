@@ -1,0 +1,32 @@
+{{- if .Values.mail.enabled }}
+# The management API, and nothing else. This is the address platform.mail.apiUrl
+# has to name: it is what the control plane's mail facade drives — domain and
+# mailbox administration over POST /jmap, plus the GET /api/account self-check
+# the Settings page reports on.
+#
+# It stays ClusterIP and carries no mail protocol. The admin bearer is the only
+# thing between a caller and every mailbox on the host, so the surface that
+# accepts it must not be reachable from outside the cluster. Publishing SMTP is
+# mail-external-service.yaml's job, and that Service publishes nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dns.resourceName" (dict "root" . "suffix" "mail") }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dns.labels" (dict "root" . "component" "mail") | nindent 4 }}
+  {{- with .Values.mail.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.mail.service.port }}
+      targetPort: api
+      protocol: TCP
+      appProtocol: http
+  selector:
+    {{- include "dns.selectorLabels" (dict "root" . "component" "mail") | nindent 4 }}
+{{- end }}
