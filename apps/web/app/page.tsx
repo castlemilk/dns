@@ -4,10 +4,10 @@ import { LandingPage } from "@/components/marketing/landing-page";
 import { fetchPublicPlan } from "@/lib/public-plan";
 
 export const metadata: Metadata = {
-  // Absolute so the "%s · Simple DNS" template from the root layout is bypassed.
-  title: { absolute: "simple · your domain, website and email" },
+  // Absolute so the "%s · Deep Hosting" template from the root layout is bypassed.
+  title: { absolute: "deep hosting · your website, email and DNS" },
   description:
-    "Authoritative DNS with guided website and email records, and the raw zone one click away.",
+    "Web hosting, email and authoritative DNS for your domain — guided records, and the raw zone one click away.",
 };
 
 /**

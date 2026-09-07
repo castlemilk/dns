@@ -22,13 +22,13 @@ export function CliApproved() {
     >
       <div className="text-ui mt-6 flex flex-col gap-3 border-t border-line-soft pt-5 leading-[1.55] text-subtle">
         <p>
-          Your terminal prints the <CliCode>simple</CliCode> banner when the
+          Your terminal prints the <CliCode>deephost</CliCode> banner when the
           credential is stored. If it does not, the login did not finish and
           nothing was written.
         </p>
         <p>
-          <CliCode>simple status</CliCode> checks the connection.{" "}
-          <CliCode>simple auth logout</CliCode> deletes the stored credential
+          <CliCode>deephost status</CliCode> checks the connection.{" "}
+          <CliCode>deephost auth logout</CliCode> deletes the stored credential
           from this machine.
         </p>
         <p>

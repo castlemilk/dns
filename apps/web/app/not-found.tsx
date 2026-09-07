@@ -19,7 +19,7 @@ export default function NotFound() {
           All domains
         </Link>
         <Link href="/" className="text-muted-foreground hover:text-foreground">
-          Back to simple
+          Back to deep hosting
         </Link>
       </div>
     </main>

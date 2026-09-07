@@ -52,7 +52,7 @@ export function CliPanel({
         {icon}
       </div>
 
-      <p className="eyebrow mt-5">simple CLI</p>
+      <p className="eyebrow mt-5">deephost CLI</p>
       <h1
         id="cli-panel-title"
         className="mt-1.5 text-xl leading-tight font-semibold"

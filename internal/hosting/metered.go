@@ -10,7 +10,7 @@ import (
 	"github.com/castlemilk/dns/internal/telemetry"
 )
 
-// meteredEngine records one `simpledns.engine.requests` measurement per engine
+// meteredEngine records one `deephost.engine.requests` measurement per engine
 // call. It wraps whichever Engine the facade is using, so the metric exists
 // whether the control plane is talking to DeepHost or to the in-memory fake,
 // and no call site has to remember to instrument itself.

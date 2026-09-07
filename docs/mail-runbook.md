@@ -36,7 +36,7 @@ directory, mode 0600:
 | `admin.secret` | the permanent `admin@local.test` credential (two lines: user, secret) |
 | `api-key.secret` | the control plane's `API_…` key |
 | `webhook.secret` | the delivery-event shared secret, once `stalwart-webhook.sh` has run |
-| `mail.env` | `MAIL_*` and `SIMPLE_TEST_STALWART_*` for the shell |
+| `mail.env` | `MAIL_*` and `DEEPHOST_TEST_STALWART_*` for the shell |
 
 Use it:
 

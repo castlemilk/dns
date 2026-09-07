@@ -286,7 +286,7 @@ export function ConnectDomainFlow({ initialDomain }: ConnectDomainFlowProps) {
           {step === "nameservers" ? (
             <>
               <Heading
-                title={`Point ${zone.name} to simple`}
+                title={`Point ${zone.name} to deep hosting`}
                 paragraph={
                   <>
                     Change the domain&rsquo;s nameservers at your registrar to

@@ -48,7 +48,7 @@ func newHarness(t *testing.T, options ...func(*config.Mail)) *harness {
 	t.Helper()
 	dir := t.TempDir()
 
-	zones, err := zone.Open(filepath.Join(dir, "dns.db"), []string{"ns1.simple.test.", "ns2.simple.test."})
+	zones, err := zone.Open(filepath.Join(dir, "dns.db"), []string{"ns1.deephost.test.", "ns2.deephost.test."})
 	if err != nil {
 		t.Fatalf("open zone store: %v", err)
 	}

@@ -50,7 +50,7 @@ const (
 	rejectEventInterval = time.Minute
 )
 
-// Webhook outcomes, as counted by simpledns.billing.webhooks.
+// Webhook outcomes, as counted by deephost.billing.webhooks.
 const (
 	outcomeAccepted           = "accepted"
 	outcomeDuplicate          = "duplicate"

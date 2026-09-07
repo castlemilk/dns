@@ -3,10 +3,10 @@
 The VKE Prometheus is standalone and does not consume `ServiceMonitor` or
 `PrometheusRule` resources. Merge the two jobs from
 `prometheus-scrape-configs.yaml` into its `scrape_configs`, mount
-`simpledns-rules.yaml`, and add that mounted path to `rule_files`.
+`deephost-rules.yaml`, and add that mounted path to `rule_files`.
 
 For the committed `castlemilk/deephost` chart, the ready-to-apply
-`deephost-simpledns-observability.patch` performs that integration, enables it
+`deephost-observability.patch` performs that integration, enables it
 in VKE and Paprika values, and provisions the dashboard into the existing
 Deephost Grafana. It does not install another Grafana. The dashboard is added
 to the existing `deephost-grafana-dashboards` ConfigMap, appears in the
@@ -34,6 +34,6 @@ currently has no Alertmanager, so they will not page until notification
 delivery is installed.
 
 After Paprika reconciles the patched Deephost chart, open the existing Grafana
-and select **DeepHost / SimpleDNS Operations**. Confirm both SimpleDNS scrape
+and select **DeepHost / DeepHost Operations**. Confirm both DeepHost scrape
 jobs, two collector replicas, and three authority replicas before treating the
 dashboard as healthy.

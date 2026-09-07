@@ -65,14 +65,17 @@ control:
       port: http
     failureThreshold: 3
     periodSeconds: 20
-    timeoutSeconds: 2
+    # Liveness restarts the container, so it must be the most forgiving of the
+    # three: a slow answer under CPU throttling is not a hung process.
+    timeoutSeconds: 5
+    failureThreshold: 6
   readinessProbe:
     httpGet:
       path: /readyz
       port: http
     failureThreshold: 3
     periodSeconds: 10
-    timeoutSeconds: 2
+    timeoutSeconds: 5
   podAnnotations: {}
   podLabels: {}
   podSecurityContext:
@@ -235,7 +238,12 @@ web:
       port: http
     failureThreshold: 30
     periodSeconds: 2
-    timeoutSeconds: 1
+    # The web container is capped at 250m CPU. On a busy node a cold Next.js
+    # route handler cannot always answer inside a second, and a startup probe
+    # that times out SIGTERMs a process that is actually healthy — this pod
+    # restarted 38 times in 26h with /api/health returning 200 in 155ms when
+    # measured directly. Give the probe room rather than the pod a restart.
+    timeoutSeconds: 5
   livenessProbe:
     httpGet:
       path: /api/health

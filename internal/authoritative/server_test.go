@@ -381,7 +381,7 @@ func TestDNSMetricsDescribeProtocolNotQuestionName(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	metricValue := authorityMetric(collected, "simpledns.dns.queries")
+	metricValue := authorityMetric(collected, "deephost.dns.queries")
 	sum, ok := metricValue.Data.(metricdata.Sum[int64])
 	if !ok || len(sum.DataPoints) != 1 {
 		t.Fatalf("DNS query metric = %#v", metricValue.Data)
@@ -422,7 +422,7 @@ func TestDNSMetricsLabelUnsupportedEDNSVersionAsBADVERS(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	metricValue := authorityMetric(collected, "simpledns.dns.queries")
+	metricValue := authorityMetric(collected, "deephost.dns.queries")
 	sum, ok := metricValue.Data.(metricdata.Sum[int64])
 	if !ok || len(sum.DataPoints) != 1 {
 		t.Fatalf("DNS query metric = %#v", metricValue.Data)

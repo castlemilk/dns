@@ -6,7 +6,7 @@ export type OperatorSessionSnapshot =
   | { status: "locked"; reason?: OperatorLockReason }
   | { status: "unlocked" };
 
-const operatorTokenKey = "simpledns.operator-token.v1";
+const operatorTokenKey = "deephost.operator-token.v1";
 const checkingSnapshot: OperatorSessionSnapshot = { status: "checking" };
 const lockedSnapshot: OperatorSessionSnapshot = { status: "locked" };
 const unlockedSnapshot: OperatorSessionSnapshot = { status: "unlocked" };

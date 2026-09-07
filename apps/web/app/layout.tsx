@@ -20,10 +20,11 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Simple DNS",
-    template: "%s · Simple DNS",
+    default: "Deep Hosting",
+    template: "%s · Deep Hosting",
   },
-  description: "A small, authoritative DNS control plane.",
+  description:
+    "Web hosting, email and authoritative DNS for your domain — one console, no zone files.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

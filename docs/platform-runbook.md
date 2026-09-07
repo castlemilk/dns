@@ -152,7 +152,7 @@ secrets, so the rotation overlap needs no coordination with Stripe:
 1. Create the new endpoint secret in Stripe, keeping the old one.
 2. Set the Secret key `stripe-webhook-secret` to `<new>,<old>`.
 3. Restart control. Both secrets now verify; the metric
-   `simpledns.billing.webhooks` carries a `secret` index so you can watch
+   `deephost.billing.webhooks` carries a `secret` index so you can watch
    traffic move onto the new one.
 4. After 24 hours, drop the old secret from the list and restart again.
 

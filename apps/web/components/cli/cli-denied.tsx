@@ -18,10 +18,10 @@ export function CliDenied() {
       <div className="text-ui mt-6 flex flex-col gap-3 border-t border-line-soft pt-5 leading-[1.55] text-subtle">
         <p>
           The CLI reports that the login was declined and exits without writing
-          anything to <CliCode>~/.config/simple/config.json</CliCode>.
+          anything to <CliCode>~/.config/deephost/config.json</CliCode>.
         </p>
         <p>
-          If declining was a mistake, run <CliCode>simple auth login</CliCode>{" "}
+          If declining was a mistake, run <CliCode>deephost auth login</CliCode>{" "}
           again — it draws a fresh state and code challenge, so the old link is
           of no use to anyone.
         </p>

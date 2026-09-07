@@ -264,9 +264,9 @@ UID is deliberately omitted to avoid needless cardinality.
     fieldRef:
       fieldPath: metadata.name
 - name: OTEL_SERVICE_NAME
-  value: {{ printf "simpledns-%s" .component | quote }}
+  value: {{ printf "deephost-%s" .component | quote }}
 - name: OTEL_RESOURCE_ATTRIBUTES
-  value: {{ printf "service.namespace=$(POD_NAMESPACE),service.version=%s,deployment.environment.name=%s,simpledns.component=%s,k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME)" .root.Chart.AppVersion .root.Values.observability.environment .component | quote }}
+  value: {{ printf "service.namespace=$(POD_NAMESPACE),service.version=%s,deployment.environment.name=%s,deephost.component=%s,k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME)" .root.Chart.AppVersion .root.Values.observability.environment .component | quote }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ include "dns.otelEndpoint" .root | quote }}
 - name: OTEL_EXPORTER_OTLP_PROTOCOL

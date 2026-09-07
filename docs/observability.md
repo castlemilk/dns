@@ -1,6 +1,6 @@
 # Observability
 
-Simple DNS exports server-side metrics and sampled, privacy-sanitized traces
+Deep Hosting exports server-side metrics and sampled, privacy-sanitized traces
 through OpenTelemetry Protocol (OTLP). The production Helm chart runs two
 OpenTelemetry Collector replicas and exposes their Prometheus views for the
 cluster monitoring plane.
@@ -56,7 +56,7 @@ activity. A local collector using OTLP/HTTP can be selected with standard
 OpenTelemetry variables:
 
 ```sh
-export OTEL_SERVICE_NAME=simpledns-local
+export OTEL_SERVICE_NAME=deephost-local
 export OTEL_RESOURCE_ATTRIBUTES='deployment.environment.name=development'
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
@@ -124,18 +124,18 @@ appropriate, and appends `_total` to counters.
 
 | Area | OpenTelemetry instruments | Bounded dimensions |
 | --- | --- | --- |
-| DNS | `simpledns.dns.queries`, `simpledns.dns.query.duration`, `simpledns.dns.response.size`, `simpledns.dns.responses.truncated`, `simpledns.dns.write.failures` | transport, RR type, response code |
-| HTTP/auth | `simpledns.http.server.requests`, `simpledns.http.server.duration`, `simpledns.http.auth.failures` | method, route template, status, audience, reason |
-| Connect | `simpledns.rpc.server.requests`, `simpledns.rpc.server.duration` | service, method, Connect status |
-| Control | `simpledns.control.mutations`, `simpledns.control.mutation.duration` | entity, operation, outcome, error class |
-| Store | `simpledns.store.transactions`, `simpledns.store.transaction.duration` | operation, read/write, outcome |
-| Snapshot | `simpledns.snapshot.*` build, admission, size, fetch, apply, cache, checksum, loaded, ready, and age instruments | operation, source, cache result, bounded outcome |
-| Authority | `simpledns.authoritative.snapshot.compiles`, `simpledns.authoritative.snapshot.compile.duration`, `simpledns.authoritative.snapshot.publishes` | outcome |
-| Inventory | `simpledns.inventory.zones`, `simpledns.inventory.records` | resource labels only |
-| Readiness | `simpledns.readiness.checks` | ready/not-ready and bounded reason |
-| Web | `simpledns.web.*` request, health, error, process, and event-loop instruments | route template, method, status class, fixed process kind |
+| DNS | `deephost.dns.queries`, `deephost.dns.query.duration`, `deephost.dns.response.size`, `deephost.dns.responses.truncated`, `deephost.dns.write.failures` | transport, RR type, response code |
+| HTTP/auth | `deephost.http.server.requests`, `deephost.http.server.duration`, `deephost.http.auth.failures` | method, route template, status, audience, reason |
+| Connect | `deephost.rpc.server.requests`, `deephost.rpc.server.duration` | service, method, Connect status |
+| Control | `deephost.control.mutations`, `deephost.control.mutation.duration` | entity, operation, outcome, error class |
+| Store | `deephost.store.transactions`, `deephost.store.transaction.duration` | operation, read/write, outcome |
+| Snapshot | `deephost.snapshot.*` build, admission, size, fetch, apply, cache, checksum, loaded, ready, and age instruments | operation, source, cache result, bounded outcome |
+| Authority | `deephost.authoritative.snapshot.compiles`, `deephost.authoritative.snapshot.compile.duration`, `deephost.authoritative.snapshot.publishes` | outcome |
+| Inventory | `deephost.inventory.zones`, `deephost.inventory.records` | resource labels only |
+| Readiness | `deephost.readiness.checks` | ready/not-ready and bounded reason |
+| Web | `deephost.web.*` request, health, error, process, and event-loop instruments | route template, method, status class, fixed process kind |
 | Runtime | standard OpenTelemetry Go runtime metrics plus the bounded web process metrics | fixed runtime kind/type only |
-| Derived spans | `simpledns.trace.*` calls and duration | service, span kind/status, bounded HTTP method/status and RPC method; span name excluded |
+| Derived spans | `deephost.trace.*` calls and duration | service, span kind/status, bounded HTTP method/status and RPC method; span name excluded |
 
 Prometheus label names are normalized in the same way, for example
 `dns.response.code` becomes `dns_response_code`, `service.name` becomes
@@ -148,21 +148,21 @@ contain the production versions with explicit windows and namespace matchers.
 
 ```promql
 # Per-second authoritative traffic by response code.
-sum by (dns_response_code) (rate(simpledns_dns_queries_total[5m]))
+sum by (dns_response_code) (rate(deephost_dns_queries_total[5m]))
 
 # Authoritative p95 request latency.
 histogram_quantile(
   0.95,
-  sum by (le) (rate(simpledns_dns_query_duration_seconds_bucket[5m]))
+  sum by (le) (rate(deephost_dns_query_duration_seconds_bucket[5m]))
 )
 
 # Snapshot age and readiness by authority pod.
-max by (k8s_pod_name) (simpledns_snapshot_age_seconds)
-min by (k8s_pod_name) (simpledns_snapshot_ready)
+max by (k8s_pod_name) (deephost_snapshot_age_seconds)
+min by (k8s_pod_name) (deephost_snapshot_ready)
 
 # Control mutation failures by operation and stable error class.
 sum by (operation, error_type) (
-  rate(simpledns_control_mutations_total{outcome="error"}[15m])
+  rate(deephost_control_mutations_total{outcome="error"}[15m])
 )
 
 # Collector ingestion failures or refused metric points.
@@ -170,7 +170,7 @@ sum(rate(otelcol_receiver_refused_metric_points[5m]))
 ```
 
 Always aggregate application counters across collector scrape targets. The
-`instance` label identifies the collector holding a stream, not the Simple DNS
+`instance` label identifies the collector holding a stream, not the Deep Hosting
 application instance; use `k8s_pod_name` for the latter.
 
 ## Verification and rollout
@@ -186,10 +186,11 @@ application instance; use `k8s_pod_name` for the latter.
 4. Start the collector locally, send real Go DNS/API and Next.js health/page
    traffic through it, then scrape 8889. Assert expected series exist and that
    secret, zone-name, query-string, and record-value markers do not.
-5. Deploy the Deephost Prometheus/Grafana integration and Simple DNS application
-   from pinned source revisions. In Prometheus, verify both collector jobs under
-   `/targets` and confirm the expected number of healthy collector endpoints.
-   In the existing Grafana, open **DeepHost / SimpleDNS Operations** and confirm
+5. Deploy the Deephost Prometheus/Grafana integration and Deep Hosting
+   application from pinned source revisions. In Prometheus, verify both
+   collector jobs under `/targets` and confirm the expected number of healthy
+   collector endpoints.
+   In the existing Grafana, open **DeepHost / DeepHost Operations** and confirm
    its scrape, collector, authority, control, web, and alert-state panels.
 6. Run the smoke queries above, deliberately exercise UDP/TCP DNS and one
    authenticated mutation, and confirm counters advance on the expected pod.

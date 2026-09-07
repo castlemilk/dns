@@ -1,6 +1,6 @@
 # Production launch and cutover runbook
 
-This runbook defines the launch gate for Simple DNS. A successful Kubernetes
+This runbook defines the launch gate for Deep Hosting. A successful Kubernetes
 rollout is not, by itself, permission to delegate a zone. Delegation happens
 only after two independently reachable authorities pass the direct and
 recursive checks below.

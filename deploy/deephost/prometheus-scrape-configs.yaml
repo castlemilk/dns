@@ -2,7 +2,7 @@
 # DNS service discovery resolves every ready endpoint behind the headless
 # Service, avoiding both cross-namespace Kubernetes API RBAC and incomplete
 # random-backend scrapes of the OTLP ClusterIP Service.
-- job_name: simpledns-otel-metrics
+- job_name: deephost-otel-metrics
   scrape_interval: 15s
   scrape_timeout: 10s
   metrics_path: /metrics
@@ -13,7 +13,7 @@
       port: 8889
       refresh_interval: 30s
 
-- job_name: simpledns-otel-collector
+- job_name: deephost-otel-collector
   scrape_interval: 15s
   scrape_timeout: 10s
   metrics_path: /metrics

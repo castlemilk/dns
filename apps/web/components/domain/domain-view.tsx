@@ -149,7 +149,7 @@ type EngineDialog =
   | { kind: "reapply-mail" };
 
 const rawZoneId = "raw-zone";
-const storageKey = (zoneName: string) => `simple:raw-zone:${zoneName}`;
+const storageKey = (zoneName: string) => `deephost:raw-zone:${zoneName}`;
 
 function dkimValidate(draft: RecordDraft) {
   const name = draft.name.trim();

@@ -152,7 +152,7 @@ func (m *Metrics) StartSnapshotFetch(ctx context.Context) (context.Context, func
 	)
 	return spanContext, func(outcome string) {
 		outcome = allowed(outcome, snapshotFetchOutcomes, "apply_error")
-		span.SetAttributes(attribute.String("simpledns.snapshot.fetch.outcome", outcome))
+		span.SetAttributes(attribute.String("deephost.snapshot.fetch.outcome", outcome))
 		if outcome != "success" && outcome != "not_modified" {
 			span.SetStatus(codes.Error, outcome)
 		}

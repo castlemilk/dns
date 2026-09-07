@@ -85,7 +85,7 @@ func (h *countingErrorHandler) Handle(error) {
 
 func TestResourceHonorsStandardEnvironmentPrecedence(t *testing.T) {
 	t.Setenv("OTEL_SERVICE_NAME", "dns-authority")
-	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=dns,pod.name=authority-0,simpledns.role=spoofed")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.namespace=dns,pod.name=authority-0,deephost.role=spoofed")
 	value, err := newResource(context.Background(), "authority")
 	if err != nil {
 		t.Fatalf("newResource: %v", err)
@@ -93,7 +93,7 @@ func TestResourceHonorsStandardEnvironmentPrecedence(t *testing.T) {
 	assertResourceAttribute(t, value.Set(), "service.name", "dns-authority")
 	assertResourceAttribute(t, value.Set(), "service.namespace", "dns")
 	assertResourceAttribute(t, value.Set(), "pod.name", "authority-0")
-	assertResourceAttribute(t, value.Set(), "simpledns.role", "spoofed")
+	assertResourceAttribute(t, value.Set(), "deephost.role", "spoofed")
 }
 
 func TestResourceAddsOnlyMissingServiceName(t *testing.T) {
@@ -103,7 +103,7 @@ func TestResourceAddsOnlyMissingServiceName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newResource: %v", err)
 	}
-	assertResourceAttribute(t, value.Set(), "service.name", "simpledns")
+	assertResourceAttribute(t, value.Set(), "service.name", "deephost")
 	assertResourceAttribute(t, value.Set(), "service.namespace", "dns")
 }
 

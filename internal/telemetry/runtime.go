@@ -225,10 +225,10 @@ func newResource(ctx context.Context, role string) (*resource.Resource, error) {
 	}
 	ownedAttributes := make([]attribute.KeyValue, 0, 2)
 	if _, configured := serviceResource.Set().Value(attribute.Key("service.name")); !configured {
-		ownedAttributes = append(ownedAttributes, attribute.String("service.name", "simpledns"))
+		ownedAttributes = append(ownedAttributes, attribute.String("service.name", "deephost"))
 	}
-	if _, configured := serviceResource.Set().Value(attribute.Key("simpledns.role")); !configured {
-		ownedAttributes = append(ownedAttributes, attribute.String("simpledns.role", allowed(role, serviceRoles, "unknown")))
+	if _, configured := serviceResource.Set().Value(attribute.Key("deephost.role")); !configured {
+		ownedAttributes = append(ownedAttributes, attribute.String("deephost.role", allowed(role, serviceRoles, "unknown")))
 	}
 	serviceResource, err = resource.Merge(serviceResource, resource.NewSchemaless(ownedAttributes...))
 	if err != nil {

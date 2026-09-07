@@ -18,24 +18,24 @@ import (
 // so this test packs exactly what deployUpload packs and follows the build to a
 // terminal phase.
 //
-// Skipped unless SIMPLE_TEST_DEEPHOST_URL is set (spec2 §10.2):
+// Skipped unless DEEPHOST_TEST_DEEPHOST_URL is set (spec2 §10.2):
 //
-//	SIMPLE_TEST_DEEPHOST_URL=http://127.0.0.1:30081 go test -run Integration ./internal/hosting/
+//	DEEPHOST_TEST_DEEPHOST_URL=http://127.0.0.1:30081 go test -run Integration ./internal/hosting/
 //
 // It uses the simple-test-hosting tenant only and deletes its app in a cleanup
 // even when it fails.
 const uploadIntegrationTenant = "simple-test-hosting"
 
 // uploadIntegrationBudget bounds how long the upload build is polled. Raise it
-// with SIMPLE_TEST_BUILD_SECONDS on a cold cluster.
+// with DEEPHOST_TEST_BUILD_SECONDS on a cold cluster.
 const uploadIntegrationBudget = 120 * time.Second
 
 func TestIntegrationUploadDeployIsAcceptedByTheBuilder(t *testing.T) {
-	url := os.Getenv("SIMPLE_TEST_DEEPHOST_URL")
+	url := os.Getenv("DEEPHOST_TEST_DEEPHOST_URL")
 	if url == "" {
-		t.Skip("SIMPLE_TEST_DEEPHOST_URL is not set; skipping the DeepHost integration test")
+		t.Skip("DEEPHOST_TEST_DEEPHOST_URL is not set; skipping the DeepHost integration test")
 	}
-	engine := deephost.New(url, os.Getenv("SIMPLE_TEST_DEEPHOST_TOKEN"))
+	engine := deephost.New(url, os.Getenv("DEEPHOST_TEST_DEEPHOST_TOKEN"))
 	ctx := context.Background()
 
 	zoneName := "up-" + strconv.FormatInt(time.Now().UnixNano(), 36) + ".example"
@@ -92,7 +92,7 @@ func TestIntegrationUploadDeployIsAcceptedByTheBuilder(t *testing.T) {
 	}
 
 	budget := uploadIntegrationBudget
-	if raw := os.Getenv("SIMPLE_TEST_BUILD_SECONDS"); raw != "" {
+	if raw := os.Getenv("DEEPHOST_TEST_BUILD_SECONDS"); raw != "" {
 		if seconds, convErr := strconv.Atoi(raw); convErr == nil && seconds > 0 {
 			budget = time.Duration(seconds) * time.Second
 		}
@@ -111,7 +111,7 @@ func TestIntegrationUploadDeployIsAcceptedByTheBuilder(t *testing.T) {
 		t.Fatalf("the upload build failed on the cluster: %s", build.Reason)
 	}
 	if !build.Terminal() {
-		t.Skipf("the upload build was still %q after %s; raise SIMPLE_TEST_BUILD_SECONDS", build.Phase, budget)
+		t.Skipf("the upload build was still %q after %s; raise DEEPHOST_TEST_BUILD_SECONDS", build.Phase, budget)
 	}
 
 	// An identical folder is content-addressed to the same build, which is what

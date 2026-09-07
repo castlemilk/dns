@@ -38,7 +38,7 @@ data:
 
     connectors:
       span_metrics:
-        namespace: simpledns.trace
+        namespace: deephost.trace
         histogram:
           unit: s
           explicit:
@@ -78,7 +78,7 @@ data:
         resource:
           attributes:
             - name: service.name
-              value: simpledns-otel-collector
+              value: deephost-otel-collector
             - name: service.namespace
               value: {{ .Release.Namespace }}
             - name: service.version

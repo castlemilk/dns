@@ -10,16 +10,16 @@ import {
 } from "./attributes";
 
 export const METRIC_NAMES = {
-  healthRequestDuration: "simpledns.web.health.request.duration",
-  healthRequests: "simpledns.web.health.requests",
-  processCpuTime: "simpledns.web.process.cpu.time",
-  processEventLoopUtilization: "simpledns.web.process.event_loop.utilization",
-  processMemoryUsage: "simpledns.web.process.memory.usage",
-  processUptime: "simpledns.web.process.uptime",
-  serverErrors: "simpledns.web.server.errors",
-  serverRequestDuration: "simpledns.web.server.request.duration",
-  serverRequests: "simpledns.web.server.requests",
-  serverStarts: "simpledns.web.server.starts",
+  healthRequestDuration: "deephost.web.health.request.duration",
+  healthRequests: "deephost.web.health.requests",
+  processCpuTime: "deephost.web.process.cpu.time",
+  processEventLoopUtilization: "deephost.web.process.event_loop.utilization",
+  processMemoryUsage: "deephost.web.process.memory.usage",
+  processUptime: "deephost.web.process.uptime",
+  serverErrors: "deephost.web.server.errors",
+  serverRequestDuration: "deephost.web.server.request.duration",
+  serverRequests: "deephost.web.server.requests",
+  serverStarts: "deephost.web.server.starts",
 } as const;
 
 let instruments: ReturnType<typeof createInstruments> | undefined;
@@ -28,7 +28,7 @@ function createInstruments() {
   // MetricsAPI returns a permanent no-op meter before provider registration
   // (unlike the trace API's proxy provider), so instruments must be created
   // lazily after instrumentation.node has installed the real provider.
-  const meter = metrics.getMeter("simpledns.web", "0.1.0");
+  const meter = metrics.getMeter("deephost.web", "0.1.0");
   return {
     healthRequestDuration: meter.createHistogram(
       METRIC_NAMES.healthRequestDuration,

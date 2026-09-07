@@ -1,0 +1,80 @@
+# Load this file through the standalone Prometheus `rule_files` setting. The
+# rules evaluate without Alertmanager, but they cannot page until a notification
+# delivery integration is installed and configured.
+groups:
+  - name: deephost.availability
+    rules:
+      - alert: DeepHostCollectorUnavailable
+        expr: absent(otelcol_process_uptime{service_name="deephost-otel-collector",service_namespace="dns"}) or count(otelcol_process_uptime{service_name="deephost-otel-collector",service_namespace="dns"}) < 2
+        for: 10m
+        labels:
+          severity: critical
+          component: otel-collector
+        annotations:
+          summary: DeepHost OpenTelemetry Collector capacity is unavailable
+          description: Fewer than the two production collectors are being scraped; application telemetry may be incomplete.
+      - alert: DeepHostCollectorExporterFailures
+        expr: sum(rate(otelcol_exporter_send_failed_metric_points{service_name="deephost-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_refused_metric_points{service_name="deephost-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_refused_spans{service_name="deephost-otel-collector",service_namespace="dns"}[5m])) > 0 or sum(rate(otelcol_receiver_failed_spans{service_name="deephost-otel-collector",service_namespace="dns"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: otel-collector
+        annotations:
+          summary: DeepHost telemetry is being dropped
+          description: A collector exporter failed or the bounded receiver refused metric points or spans.
+      - alert: DeepHostControlUnavailable
+        expr: absent(deephost_readiness_checks_total{service_name="deephost-control",service_namespace="dns"}) or sum(rate(deephost_readiness_checks_total{service_name="deephost-control",service_namespace="dns",outcome="ready"}[5m])) == 0 or sum(rate(deephost_readiness_checks_total{service_name="deephost-control",service_namespace="dns",outcome="not_ready"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: control
+        annotations:
+          summary: DeepHost control plane is unavailable
+          description: Control readiness telemetry is absent, stalled, or continuously reporting not ready.
+      - alert: DeepHostWebUnavailable
+        expr: absent(deephost_web_health_requests_total{service_name="deephost-web",service_namespace="dns"}) or sum(rate(deephost_web_health_requests_total{service_name="deephost-web",service_namespace="dns"}[5m])) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: web
+        annotations:
+          summary: DeepHost web telemetry is unavailable
+          description: Web health-probe telemetry is absent or has stopped advancing.
+  - name: deephost.data-plane
+    rules:
+      - alert: DeepHostAuthorityTelemetryMissing
+        expr: absent(deephost_snapshot_ready{service_name="deephost-authority",service_namespace="dns"}) or count(count by (k8s_pod_name) (deephost_snapshot_ready{service_name="deephost-authority",service_namespace="dns"})) < 3
+        for: 10m
+        labels:
+          severity: critical
+          component: authority
+        annotations:
+          summary: DeepHost authority telemetry is incomplete
+          description: Fewer than the three production authorities are publishing snapshot readiness.
+      - alert: DeepHostAuthoritySnapshotStale
+        expr: max by (k8s_pod_name) (deephost_snapshot_age_seconds{service_name="deephost-authority",service_namespace="dns"}) > 300 or min by (k8s_pod_name) (deephost_snapshot_ready{service_name="deephost-authority",service_namespace="dns"}) < 1
+        for: 10m
+        labels:
+          severity: critical
+          component: authority
+        annotations:
+          summary: A DeepHost authority has a stale snapshot
+          description: The authority snapshot exceeded 300 seconds or is no longer ready.
+      - alert: DeepHostSnapshotFailures
+        expr: sum by (k8s_pod_name) (rate(deephost_snapshot_fetches_total{service_name="deephost-authority",service_namespace="dns",outcome=~"request_error|transport_error|http_error|read_error|apply_error"}[5m])) > 0 or sum by (k8s_pod_name) (rate(deephost_snapshot_applies_total{service_name="deephost-authority",service_namespace="dns",outcome!="success"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: authority
+        annotations:
+          summary: A DeepHost authority cannot refresh its snapshot
+          description: Snapshot fetch, validation, compilation, or cache publication is repeatedly failing.
+      - alert: DeepHostServfailRatioHigh
+        expr: (sum(rate(deephost_dns_queries_total{service_name="deephost-authority",service_namespace="dns",dns_response_code="SERVFAIL"}[5m])) / clamp_min(sum(rate(deephost_dns_queries_total{service_name="deephost-authority",service_namespace="dns"}[5m])), 0.001)) > 0.01 or sum(rate(deephost_dns_write_failures_total{service_name="deephost-authority",service_namespace="dns"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: authority
+        annotations:
+          summary: DeepHost authoritative error ratio is high
+          description: SERVFAIL responses exceed one percent or response writes are failing.

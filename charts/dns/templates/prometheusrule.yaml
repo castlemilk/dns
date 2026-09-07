@@ -11,71 +11,71 @@ metadata:
     {{- include "dns.labels" (dict "root" . "component" "observability") | nindent 4 }}
 spec:
   groups:
-    - name: simpledns.availability
+    - name: deephost.availability
       rules:
-        - alert: SimpleDNSCollectorUnavailable
+        - alert: DeepHostCollectorUnavailable
           expr: |
-            absent(otelcol_process_uptime{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}})
+            absent(otelcol_process_uptime{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}})
             or
-            count(otelcol_process_uptime{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}}) < {{ .Values.observability.collector.replicaCount }}
+            count(otelcol_process_uptime{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}}) < {{ .Values.observability.collector.replicaCount }}
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: otel-collector
           annotations:
-            summary: SimpleDNS OpenTelemetry Collector capacity is unavailable
+            summary: DeepHost OpenTelemetry Collector capacity is unavailable
             description: Fewer than the configured collector replicas are being scraped; application telemetry may be incomplete.
-        - alert: SimpleDNSCollectorExporterFailures
+        - alert: DeepHostCollectorExporterFailures
           expr: |
-            sum(rate(otelcol_exporter_send_failed_metric_points{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(otelcol_exporter_send_failed_metric_points{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
             or
-            sum(rate(otelcol_receiver_refused_metric_points{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(otelcol_receiver_refused_metric_points{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
             or
-            sum(rate(otelcol_receiver_refused_spans{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(otelcol_receiver_refused_spans{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
             or
-            sum(rate(otelcol_receiver_failed_spans{service_name="simpledns-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(otelcol_receiver_failed_spans{service_name="deephost-otel-collector",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: otel-collector
           annotations:
-            summary: SimpleDNS telemetry is being dropped
+            summary: DeepHost telemetry is being dropped
             description: A collector exporter failed or the bounded receiver refused metric points or spans.
-        - alert: SimpleDNSControlUnavailable
+        - alert: DeepHostControlUnavailable
           expr: |
-            absent(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace={{ .Release.Namespace | quote }}})
+            absent(deephost_readiness_checks_total{service_name="deephost-control",service_namespace={{ .Release.Namespace | quote }}})
             or
-            sum(rate(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace={{ .Release.Namespace | quote }},outcome="ready"}[{{ .Values.observability.alerts.evaluationWindow }}])) == 0
+            sum(rate(deephost_readiness_checks_total{service_name="deephost-control",service_namespace={{ .Release.Namespace | quote }},outcome="ready"}[{{ .Values.observability.alerts.evaluationWindow }}])) == 0
             or
-            sum(rate(simpledns_readiness_checks_total{service_name="simpledns-control",service_namespace={{ .Release.Namespace | quote }},outcome="not_ready"}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(deephost_readiness_checks_total{service_name="deephost-control",service_namespace={{ .Release.Namespace | quote }},outcome="not_ready"}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: control
           annotations:
-            summary: SimpleDNS control plane is unavailable
+            summary: DeepHost control plane is unavailable
             description: Control readiness telemetry is absent, stalled, or continuously reporting not ready.
-        - alert: SimpleDNSWebUnavailable
+        - alert: DeepHostWebUnavailable
           expr: |
-            absent(simpledns_web_health_requests_total{service_name="simpledns-web",service_namespace={{ .Release.Namespace | quote }}})
+            absent(deephost_web_health_requests_total{service_name="deephost-web",service_namespace={{ .Release.Namespace | quote }}})
             or
-            sum(rate(simpledns_web_health_requests_total{service_name="simpledns-web",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) == 0
+            sum(rate(deephost_web_health_requests_total{service_name="deephost-web",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) == 0
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: web
           annotations:
-            summary: SimpleDNS web telemetry is unavailable
+            summary: DeepHost web telemetry is unavailable
             description: Web health-probe telemetry is absent or has stopped advancing.
-    - name: simpledns.data-plane
+    - name: deephost.data-plane
       rules:
-        - alert: SimpleDNSAuthorityTelemetryMissing
+        - alert: DeepHostAuthorityTelemetryMissing
           expr: |
-            absent(simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}})
+            absent(deephost_snapshot_ready{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}})
             or
             count(
               count by (k8s_pod_name) (
-                simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}}
+                deephost_snapshot_ready{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}}
               )
             ) < {{ .Values.authority.replicaCount }}
           for: {{ .Values.observability.alerts.for }}
@@ -83,54 +83,54 @@ spec:
             severity: critical
             component: authority
           annotations:
-            summary: SimpleDNS authority telemetry is incomplete
+            summary: DeepHost authority telemetry is incomplete
             description: Fewer than the configured authority replicas are publishing snapshot readiness.
-        - alert: SimpleDNSAuthoritySnapshotStale
+        - alert: DeepHostAuthoritySnapshotStale
           expr: |
             max by (k8s_pod_name) (
-              simpledns_snapshot_age_seconds{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}}
+              deephost_snapshot_age_seconds{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}}
             ) > {{ .Values.observability.alerts.authorityStaleSeconds }}
             or
             min by (k8s_pod_name) (
-              simpledns_snapshot_ready{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}}
+              deephost_snapshot_ready{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}}
             ) < 1
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: authority
           annotations:
-            summary: A SimpleDNS authority has a stale snapshot
+            summary: A DeepHost authority has a stale snapshot
             description: The authority snapshot exceeded the telemetry warning threshold or is no longer ready.
-        - alert: SimpleDNSSnapshotFailures
+        - alert: DeepHostSnapshotFailures
           expr: |
             sum by (k8s_pod_name) (
-              rate(simpledns_snapshot_fetches_total{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }},outcome=~"request_error|transport_error|http_error|read_error|apply_error"}[{{ .Values.observability.alerts.evaluationWindow }}])
+              rate(deephost_snapshot_fetches_total{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }},outcome=~"request_error|transport_error|http_error|read_error|apply_error"}[{{ .Values.observability.alerts.evaluationWindow }}])
             ) > 0
             or
             sum by (k8s_pod_name) (
-              rate(simpledns_snapshot_applies_total{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }},outcome!="success"}[{{ .Values.observability.alerts.evaluationWindow }}])
+              rate(deephost_snapshot_applies_total{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }},outcome!="success"}[{{ .Values.observability.alerts.evaluationWindow }}])
             ) > 0
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: warning
             component: authority
           annotations:
-            summary: A SimpleDNS authority cannot refresh its snapshot
+            summary: A DeepHost authority cannot refresh its snapshot
             description: Snapshot fetch, validation, compilation, or cache publication is repeatedly failing.
-        - alert: SimpleDNSServfailRatioHigh
+        - alert: DeepHostServfailRatioHigh
           expr: |
             (
-              sum(rate(simpledns_dns_queries_total{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }},dns_response_code="SERVFAIL"}[{{ .Values.observability.alerts.evaluationWindow }}]))
+              sum(rate(deephost_dns_queries_total{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }},dns_response_code="SERVFAIL"}[{{ .Values.observability.alerts.evaluationWindow }}]))
               /
-              clamp_min(sum(rate(simpledns_dns_queries_total{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])), 0.001)
+              clamp_min(sum(rate(deephost_dns_queries_total{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])), 0.001)
             ) > {{ .Values.observability.alerts.dnsServfailRatio }}
             or
-            sum(rate(simpledns_dns_write_failures_total{service_name="simpledns-authority",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
+            sum(rate(deephost_dns_write_failures_total{service_name="deephost-authority",service_namespace={{ .Release.Namespace | quote }}}[{{ .Values.observability.alerts.evaluationWindow }}])) > 0
           for: {{ .Values.observability.alerts.for }}
           labels:
             severity: critical
             component: authority
           annotations:
-            summary: SimpleDNS authoritative error ratio is high
+            summary: DeepHost authoritative error ratio is high
             description: SERVFAIL responses exceed the configured ratio or response writes are failing.
 {{- end }}

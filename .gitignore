@@ -35,3 +35,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 backend.hcl
+
+# Compiled binaries built at the repo root by `go build`.
+/dnsctl
+/deephost
+/deephost-mail
+/deephost-mcp
