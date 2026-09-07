@@ -71,8 +71,9 @@ type Sheet =
       kind: "created";
       address: string;
       password: string;
-      imapHost: string;
-      imapPort: number;
+      retrievalProtocol: string;
+      retrievalHost: string;
+      retrievalPort: number;
       smtpHost: string;
       smtpPort: number;
     };
@@ -500,8 +501,9 @@ export function MailDomainSection({
                 kind: "created",
                 address: result.mailbox?.address ?? "",
                 password: result.password,
-                imapHost: result.imapHost,
-                imapPort: result.imapPort,
+                retrievalProtocol: result.retrievalProtocol,
+                retrievalHost: result.retrievalHost,
+                retrievalPort: result.retrievalPort,
                 smtpHost: result.smtpHost,
                 smtpPort: result.smtpPort,
               });
@@ -537,8 +539,9 @@ export function MailDomainSection({
         <MailboxCreatedDialog
           address={sheet.address}
           password={sheet.password}
-          imapHost={sheet.imapHost}
-          imapPort={sheet.imapPort}
+          retrievalProtocol={sheet.retrievalProtocol}
+          retrievalHost={sheet.retrievalHost}
+          retrievalPort={sheet.retrievalPort}
           smtpHost={sheet.smtpHost}
           smtpPort={sheet.smtpPort}
           open
