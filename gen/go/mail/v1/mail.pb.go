@@ -1845,15 +1845,16 @@ func (x *CreateMailboxRequest) GetQuotaBytes() uint64 {
 }
 
 type CreateMailboxResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Mailbox       *Mailbox               `protobuf:"bytes,1,opt,name=mailbox,proto3" json:"mailbox,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`                  // generated; shown once; never stored, logged or recorded by the facade
-	ImapHost      string                 `protobuf:"bytes,3,opt,name=imap_host,json=imapHost,proto3" json:"imap_host,omitempty"`  // MAIL_HOSTNAME
-	ImapPort      uint32                 `protobuf:"varint,4,opt,name=imap_port,json=imapPort,proto3" json:"imap_port,omitempty"` // 993
-	SmtpHost      string                 `protobuf:"bytes,5,opt,name=smtp_host,json=smtpHost,proto3" json:"smtp_host,omitempty"`
-	SmtpPort      uint32                 `protobuf:"varint,6,opt,name=smtp_port,json=smtpPort,proto3" json:"smtp_port,omitempty"` // 465
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Mailbox           *Mailbox               `protobuf:"bytes,1,opt,name=mailbox,proto3" json:"mailbox,omitempty"`
+	Password          string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"` // generated; shown once; never stored, logged or recorded by the facade
+	SmtpHost          string                 `protobuf:"bytes,5,opt,name=smtp_host,json=smtpHost,proto3" json:"smtp_host,omitempty"`
+	SmtpPort          uint32                 `protobuf:"varint,6,opt,name=smtp_port,json=smtpPort,proto3" json:"smtp_port,omitempty"`                           // submission, from _submissions._tcp
+	RetrievalProtocol string                 `protobuf:"bytes,7,opt,name=retrieval_protocol,json=retrievalProtocol,proto3" json:"retrieval_protocol,omitempty"` // "imaps" | "pop3s"; empty when the engine advertises neither
+	RetrievalHost     string                 `protobuf:"bytes,8,opt,name=retrieval_host,json=retrievalHost,proto3" json:"retrieval_host,omitempty"`
+	RetrievalPort     uint32                 `protobuf:"varint,9,opt,name=retrieval_port,json=retrievalPort,proto3" json:"retrieval_port,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CreateMailboxResponse) Reset() {
@@ -1900,20 +1901,6 @@ func (x *CreateMailboxResponse) GetPassword() string {
 	return ""
 }
 
-func (x *CreateMailboxResponse) GetImapHost() string {
-	if x != nil {
-		return x.ImapHost
-	}
-	return ""
-}
-
-func (x *CreateMailboxResponse) GetImapPort() uint32 {
-	if x != nil {
-		return x.ImapPort
-	}
-	return 0
-}
-
 func (x *CreateMailboxResponse) GetSmtpHost() string {
 	if x != nil {
 		return x.SmtpHost
@@ -1924,6 +1911,27 @@ func (x *CreateMailboxResponse) GetSmtpHost() string {
 func (x *CreateMailboxResponse) GetSmtpPort() uint32 {
 	if x != nil {
 		return x.SmtpPort
+	}
+	return 0
+}
+
+func (x *CreateMailboxResponse) GetRetrievalProtocol() string {
+	if x != nil {
+		return x.RetrievalProtocol
+	}
+	return ""
+}
+
+func (x *CreateMailboxResponse) GetRetrievalHost() string {
+	if x != nil {
+		return x.RetrievalHost
+	}
+	return ""
+}
+
+func (x *CreateMailboxResponse) GetRetrievalPort() uint32 {
+	if x != nil {
+		return x.RetrievalPort
 	}
 	return 0
 }
@@ -2944,14 +2952,15 @@ const file_mail_v1_mail_proto_rawDesc = "" +
 	"local_part\x18\x02 \x01(\tR\tlocalPart\x12!\n" +
 	"\fdisplay_name\x18\x03 \x01(\tR\vdisplayName\x12\x1f\n" +
 	"\vquota_bytes\x18\x04 \x01(\x04R\n" +
-	"quotaBytes\"\xd3\x01\n" +
+	"quotaBytes\"\xb8\x02\n" +
 	"\x15CreateMailboxResponse\x12*\n" +
 	"\amailbox\x18\x01 \x01(\v2\x10.mail.v1.MailboxR\amailbox\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1b\n" +
-	"\timap_host\x18\x03 \x01(\tR\bimapHost\x12\x1b\n" +
-	"\timap_port\x18\x04 \x01(\rR\bimapPort\x12\x1b\n" +
 	"\tsmtp_host\x18\x05 \x01(\tR\bsmtpHost\x12\x1b\n" +
-	"\tsmtp_port\x18\x06 \x01(\rR\bsmtpPort\"\xbd\x01\n" +
+	"\tsmtp_port\x18\x06 \x01(\rR\bsmtpPort\x12-\n" +
+	"\x12retrieval_protocol\x18\a \x01(\tR\x11retrievalProtocol\x12%\n" +
+	"\x0eretrieval_host\x18\b \x01(\tR\rretrievalHost\x12%\n" +
+	"\x0eretrieval_port\x18\t \x01(\rR\rretrievalPortJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05R\timap_hostR\timap_port\"\xbd\x01\n" +
 	"\x14UpdateMailboxRequest\x12\x17\n" +
 	"\azone_id\x18\x01 \x01(\tR\x06zoneId\x12\x1d\n" +
 	"\n" +

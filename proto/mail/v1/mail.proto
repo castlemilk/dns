@@ -254,12 +254,22 @@ message CreateMailboxRequest {
 }
 
 message CreateMailboxResponse {
+  // How a client actually reaches this mailbox. The retrieval fields used to be
+  // imap_host/imap_port fixed at 993, which described Stalwart's defaults rather
+  // than the engine in front of us: a deployment whose engine speaks POP3 and no
+  // IMAP told its users to configure a port nothing listens on. They are now
+  // derived from the client-autoconfiguration records the engine itself
+  // advertises, so an engine that offers neither says so by leaving them empty.
+  reserved 3, 4;
+  reserved "imap_host", "imap_port";
+
   Mailbox mailbox = 1;
   string password = 2;           // generated; shown once; never stored, logged or recorded by the facade
-  string imap_host = 3;          // MAIL_HOSTNAME
-  uint32 imap_port = 4;          // 993
   string smtp_host = 5;
-  uint32 smtp_port = 6;          // 465
+  uint32 smtp_port = 6;          // submission, from _submissions._tcp
+  string retrieval_protocol = 7; // "imaps" | "pop3s"; empty when the engine advertises neither
+  string retrieval_host = 8;
+  uint32 retrieval_port = 9;
 }
 
 message UpdateMailboxRequest {

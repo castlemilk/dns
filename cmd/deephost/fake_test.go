@@ -749,9 +749,9 @@ func (p *plane) CreateMailbox(
 	}
 	p.mailboxes[domain.GetZoneId()] = append(p.mailboxes[domain.GetZoneId()], mailbox)
 	return connect.NewResponse(&mailv1.CreateMailboxResponse{
-		Mailbox:  mailbox,
-		Password: "correct-horse-battery-staple",
-		ImapHost: "mail.deephost.test", ImapPort: 993,
+		Mailbox:           mailbox,
+		Password:          "correct-horse-battery-staple",
+		RetrievalProtocol: "imaps", RetrievalHost: "mail.deephost.test", RetrievalPort: 993,
 		SmtpHost: "mail.deephost.test", SmtpPort: 465,
 	}), nil
 }

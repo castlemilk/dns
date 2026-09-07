@@ -72,8 +72,14 @@ func TestCreateMailboxReturnsTheCredentialOnceWithTheClientPorts(t *testing.T) {
 	if credential == "" {
 		t.Fatal("no credential was returned")
 	}
-	if created.GetImapHost() != "mail.local.test" || created.GetImapPort() != 993 {
-		t.Errorf("imap = %s:%d", created.GetImapHost(), created.GetImapPort())
+	// The retrieval hint is derived from the engine's own autoconfiguration
+	// records, not from a constant: an engine advertising no IMAP must not be
+	// described as IMAP. fakemail advertises _imaps._tcp on 993.
+	if created.GetRetrievalProtocol() != "imaps" {
+		t.Errorf("retrieval protocol = %q, want imaps", created.GetRetrievalProtocol())
+	}
+	if created.GetRetrievalHost() != "mail.local.test" || created.GetRetrievalPort() != 993 {
+		t.Errorf("retrieval = %s:%d", created.GetRetrievalHost(), created.GetRetrievalPort())
 	}
 	if created.GetSmtpHost() != "mail.local.test" || created.GetSmtpPort() != 465 {
 		t.Errorf("smtp = %s:%d", created.GetSmtpHost(), created.GetSmtpPort())
@@ -581,5 +587,83 @@ func TestTransportFailuresAreUnavailable(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "did not answer") {
 		t.Errorf("message = %v", err)
+	}
+}
+
+// TestDeriveClientHintsNamesOnlyWhatTheEngineOffers pins the fix for a mailbox
+// response that told users to configure IMAP on 993 because that was a constant
+// copied from Stalwart's defaults. Running a POP3-only engine, that hint pointed
+// a mail client at a port nothing listened on.
+func TestDeriveClientHintsNamesOnlyWhatTheEngineOffers(t *testing.T) {
+	t.Parallel()
+
+	srv := func(owner, target string, port int) autoconfigRecord {
+		return autoconfigRecord{
+			Name:  owner,
+			Type:  "SRV",
+			Value: fmt.Sprintf("0 1 %d %s.", port, strings.TrimSuffix(target, ".")),
+		}
+	}
+
+	tests := []struct {
+		name         string
+		records      []autoconfigRecord
+		wantProtocol string
+		wantHost     string
+		wantPort     uint32
+		wantSMTPPort uint32
+	}{
+		{
+			name:         "an engine offering IMAP is described as IMAP",
+			records:      []autoconfigRecord{srv("_imaps._tcp", "mail.example.test", 993)},
+			wantProtocol: "imaps", wantHost: "mail.example.test", wantPort: 993,
+		},
+		{
+			// The bug: this engine speaks POP3 and no IMAP.
+			name:         "a POP3-only engine is described as POP3, never IMAP",
+			records:      []autoconfigRecord{srv("_pop3s._tcp", "mail.example.test", 995)},
+			wantProtocol: "pop3s", wantHost: "mail.example.test", wantPort: 995,
+		},
+		{
+			name: "IMAP wins when the engine offers both",
+			records: []autoconfigRecord{
+				srv("_pop3s._tcp", "mail.example.test", 995),
+				srv("_imaps._tcp", "mail.example.test", 993),
+			},
+			wantProtocol: "imaps", wantHost: "mail.example.test", wantPort: 993,
+		},
+		{
+			name:         "an engine advertising neither names no protocol at all",
+			records:      []autoconfigRecord{srv("_submissions._tcp", "mail.example.test", 465)},
+			wantProtocol: "", wantHost: "", wantPort: 0, wantSMTPPort: 465,
+		},
+		{
+			name:         "no records at all is not an invented port",
+			records:      nil,
+			wantProtocol: "", wantHost: "", wantPort: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := deriveClientHints(test.records, "fallback.test")
+
+			if got.RetrievalProtocol != test.wantProtocol {
+				t.Errorf("protocol = %q, want %q", got.RetrievalProtocol, test.wantProtocol)
+			}
+			if got.RetrievalHost != test.wantHost {
+				t.Errorf("host = %q, want %q", got.RetrievalHost, test.wantHost)
+			}
+			if got.RetrievalPort != test.wantPort {
+				t.Errorf("port = %d, want %d", got.RetrievalPort, test.wantPort)
+			}
+			if got.SMTPPort != test.wantSMTPPort {
+				t.Errorf("smtp port = %d, want %d", got.SMTPPort, test.wantSMTPPort)
+			}
+			if got.SMTPHost == "" {
+				t.Error("smtp host is empty; it must fall back to the configured hostname")
+			}
+		})
 	}
 }
