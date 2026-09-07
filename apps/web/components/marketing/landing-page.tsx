@@ -14,35 +14,44 @@ import type { PublicPlan } from "@/lib/public-plan";
  * What it claims is decided by `GET /public/v1/plan` — the same control plane the
  * console talks to. With no plan (the variable is unset, or the control API did not
  * answer) or with every engine unconfigured it is the DNS-only page, word for word: a
- * deployment that runs no hosting engine never advertises deploys, and a price is only
- * ever the one the billing engine reported.
+ * deployment that runs no hosting engine never advertises deploys, never illustrates a
+ * mailbox, and a price is only ever the one the billing engine reported.
  */
 
 export type LandingPageProps = {
   plan?: PublicPlan;
 };
 
-type Feature = { id: string; eyebrow: string; title: string; body: string };
+type Product = {
+  id: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  points: string[];
+};
 
-const dnsOnlyWebsite: Feature = {
+const dnsOnlyWebsite: Product = {
   id: "website",
   eyebrow: "WEBSITE",
   title: "Point it anywhere",
-  body: "Enter the IP or host your site lives on. The A, AAAA and www records are written for you — Vercel, Fly, Netlify or your own server.",
+  body: "Enter the IP or host your site lives on and the records are written for you — Vercel, Fly, Netlify or your own server.",
+  points: ["A, AAAA and www together", "Apex and subdomain handled", "Change it later without touching the zone"],
 };
 
-const dnsOnlyEmail: Feature = {
+const dnsOnlyEmail: Product = {
   id: "email",
   eyebrow: "EMAIL",
   title: "Mail routing, done right",
-  body: "Pick your provider and the MX, SPF and DMARC records are generated together. Add DKIM when your provider gives you the key.",
+  body: "Pick your provider and the records that make mail deliverable are generated as one set, not one at a time.",
+  points: ["MX, SPF and DMARC together", "DKIM when your provider gives you the key", "No half-configured domains"],
 };
 
-const dnsFeature: Feature = {
+const dnsProduct: Product = {
   id: "dns",
   eyebrow: "DNS",
-  title: "Records, written for you",
-  body: "Every guided step creates the records it needs. Add your own for anything else, or edit the raw zone directly, or import and export it.",
+  title: "Authoritative, and yours",
+  body: "Every guided step writes the records it needs. Add your own for anything else, edit the raw zone directly, or import and export it.",
+  points: ["Self-hosted authoritative nameservers", "The raw zone one click away", "Import and export a zone file"],
 };
 
 const dnsOnlyCapabilities =
@@ -64,27 +73,37 @@ export function LandingPage({ plan }: LandingPageProps) {
   const priceLabel = plan?.priceLabel ?? "";
   const pricing = (plan?.billingConfigured ?? false) && priceLabel !== "";
 
-  const websiteFeature: Feature = hosting
+  const websiteProduct: Product = hosting
     ? {
         id: "website",
-        eyebrow: "WEBSITE",
+        eyebrow: "HOSTING",
         title: "Deploy from GitHub",
         body: `Connect a repository${
           uploads ? " or drop a folder" : ""
         }. Static sites, Node and Next.js build on our hosting engine and go live over HTTPS.`,
+        points: [
+          "Static, Node and Next.js builds",
+          "HTTPS provisioned for you",
+          uploads ? "Push to deploy, or drop a folder" : "Push to deploy",
+        ],
       }
     : dnsOnlyWebsite;
 
-  const emailFeature: Feature = mail
+  const emailProduct: Product = mail
     ? {
         id: "email",
         eyebrow: "EMAIL",
         title: "Mailboxes that just work",
-        body: "Add an address and it's ready to use. SPF, DKIM and DMARC are published for you.",
+        body: "Add an address and it is ready to use. The records that make mail deliverable are published for you.",
+        points: [
+          "Real mailboxes on your own domain",
+          "SPF, DKIM and DMARC published automatically",
+          "Forwarding without a second provider",
+        ],
       }
     : dnsOnlyEmail;
 
-  const features = [websiteFeature, emailFeature, dnsFeature];
+  const products = [websiteProduct, emailProduct, dnsProduct];
 
   // Only the engines this deployment runs are ever named as included.
   const included = [
@@ -95,12 +114,44 @@ export function LandingPage({ plan }: LandingPageProps) {
     "DNS",
   ].filter((part): part is string => part !== undefined);
 
+  const headline =
+    hosting || mail
+      ? "Your website, email and DNS. One place, no zone files."
+      : "Your domain, website and email. One place, no zone files.";
+
   const subtitle =
     hosting || mail
       ? `Connect a domain${hosting ? ", deploy a repo" : ""}${
           mail ? ", add a mailbox" : ""
         }. The DNS writes itself. When you want the raw records, they're right there.`
       : undefined;
+
+  // The last step is only ever the work this deployment can actually do.
+  const finalStep = hosting
+    ? {
+        title: "Deploy",
+        body: mail
+          ? "Connect a repository and it builds and goes live. Add a mailbox and it is ready to use."
+          : "Connect a repository and it builds and goes live over HTTPS.",
+      }
+    : {
+        title: mail ? "Point and send" : "Point it where it lives",
+        body: mail
+          ? "Tell us where your site lives and add a mailbox. Every record either needs is written for you."
+          : "Tell us where your site lives and who handles your mail. Every record either needs is written for you.",
+      };
+
+  const steps = [
+    {
+      title: "Add your domain",
+      body: "Enter the domain you own. Its zone is created, with the records a working domain needs already in place.",
+    },
+    {
+      title: "Point the nameservers",
+      body: "Paste two nameservers at your registrar. We show you exactly what to enter, and tell you when it has taken effect.",
+    },
+    finalStep,
+  ];
 
   return (
     <div className="min-h-dvh bg-page text-foreground">
@@ -113,7 +164,7 @@ export function LandingPage({ plan }: LandingPageProps) {
         <main>
           <section className="flex flex-col items-center gap-6 px-6 pt-16 pb-12 text-center lg:px-16 lg:pt-24 lg:pb-[72px]">
             <h1 className="max-w-[820px] text-[40px] leading-[1.05] font-semibold tracking-[-0.02em] text-balance sm:text-[52px] lg:text-[60px]">
-              Your domain, website and email. One place, no zone files.
+              {headline}
             </h1>
             <p className="max-w-[600px] text-lg leading-[1.55] text-pretty text-subtle">
               {subtitle ?? (
@@ -149,21 +200,57 @@ export function LandingPage({ plan }: LandingPageProps) {
           <ProductFrame plan={plan} />
 
           <section className="grid gap-12 px-6 py-16 lg:px-16 lg:py-24 md:grid-cols-3">
-            {features.map((feature) => (
+            {products.map((product) => (
               <div
-                key={feature.id}
-                id={feature.id}
+                key={product.id}
+                id={product.id}
                 className="flex scroll-mt-8 flex-col gap-2.5"
               >
                 <p className="font-mono text-xs font-medium text-primary">
-                  {feature.eyebrow}
+                  {product.eyebrow}
                 </p>
-                <h2 className="text-xl font-semibold">{feature.title}</h2>
+                <h2 className="text-xl font-semibold">{product.title}</h2>
                 <p className="text-[14.5px] leading-[1.6] text-subtle">
-                  {feature.body}
+                  {product.body}
                 </p>
+                <ul className="mt-1.5 flex flex-col gap-1.5">
+                  {product.points.map((point) => (
+                    <li
+                      key={point}
+                      className="flex gap-2.5 text-[14px] leading-[1.5] text-subtle"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="mt-[7px] size-1 shrink-0 rounded-full bg-primary"
+                      />
+                      {point}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
+          </section>
+
+          <section
+            id="how"
+            className="scroll-mt-8 border-t border-line px-6 py-16 lg:px-16 lg:py-24"
+          >
+            <h2 className="text-[26px] font-semibold tracking-[-0.01em] sm:text-[30px]">
+              Three steps to a working domain
+            </h2>
+            <ol className="mt-10 grid gap-10 md:grid-cols-3">
+              {steps.map((step, index) => (
+                <li key={step.title} className="flex flex-col gap-2.5">
+                  <span className="font-mono text-xs font-medium text-primary">
+                    {`0${index + 1}`}
+                  </span>
+                  <h3 className="text-lg font-semibold">{step.title}</h3>
+                  <p className="text-[14.5px] leading-[1.6] text-subtle">
+                    {step.body}
+                  </p>
+                </li>
+              ))}
+            </ol>
           </section>
 
           {pricing ? (

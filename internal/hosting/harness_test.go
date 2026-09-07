@@ -161,7 +161,7 @@ func newHarness(t *testing.T, mutate ...func(*config.Hosting)) *harness {
 	t.Helper()
 
 	dir := t.TempDir()
-	zones, err := zone.Open(filepath.Join(dir, "dns.db"), []string{"ns1.simple.test"})
+	zones, err := zone.Open(filepath.Join(dir, "dns.db"), []string{"ns1.deephost.test"})
 	if err != nil {
 		t.Fatalf("zone.Open: %v", err)
 	}

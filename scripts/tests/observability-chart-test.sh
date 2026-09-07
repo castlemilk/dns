@@ -59,7 +59,7 @@ if grep -Fq 'debug:' "${production_render}"; then
 fi
 
 [[ "$(grep -Fc 'name: OTEL_SERVICE_NAME' "${production_render}")" == 3 ]] || fail 'OTel SDK settings were not injected into all three components'
-for service_name in simpledns-control simpledns-authority simpledns-web; do
+for service_name in deephost-control deephost-authority deephost-web; do
   grep -Fq "value: \"${service_name}\"" "${production_render}" || fail "missing service.name ${service_name}"
 done
 [[ "$(grep -Fc 'path: /api/health' "${production_render}")" == 3 ]] || fail 'all web probes must drive the dedicated health telemetry route'
@@ -82,21 +82,21 @@ helm template dns "${chart}" --namespace dns \
 grep -Fq 'kind: ServiceMonitor' "${monitoring_render}" || fail 'ServiceMonitor missing with CRD capability'
 [[ "$(sed -n '/kind: ServiceMonitor/,/^---$/p' "${monitoring_render}" | grep -c '^    - port:')" == 2 ]] || fail 'ServiceMonitor must scrape both collector endpoints'
 grep -Fq 'kind: PrometheusRule' "${monitoring_render}" || fail 'PrometheusRule missing with CRD capability'
-for alert in SimpleDNSCollectorUnavailable SimpleDNSCollectorExporterFailures SimpleDNSControlUnavailable SimpleDNSWebUnavailable SimpleDNSAuthorityTelemetryMissing SimpleDNSAuthoritySnapshotStale SimpleDNSSnapshotFailures SimpleDNSServfailRatioHigh; do
+for alert in DeepHostCollectorUnavailable DeepHostCollectorExporterFailures DeepHostControlUnavailable DeepHostWebUnavailable DeepHostAuthorityTelemetryMissing DeepHostAuthoritySnapshotStale DeepHostSnapshotFailures DeepHostServfailRatioHigh; do
   grep -Fq "alert: ${alert}" "${monitoring_render}" || fail "missing alert ${alert}"
 done
-grep -Fq 'simpledns_web_health_requests_total' "${monitoring_render}" || fail 'web health heartbeat alert metric missing'
+grep -Fq 'deephost_web_health_requests_total' "${monitoring_render}" || fail 'web health heartbeat alert metric missing'
 grep -Fq 'otelcol_receiver_refused_spans' "${monitoring_render}" || fail 'collector refused-spans loss alert missing'
 grep -Fq 'otelcol_receiver_failed_spans' "${monitoring_render}" || fail 'collector failed-spans loss alert missing'
 
 # The actual standalone Deephost Prometheus integration is independently
 # parseable and uses headless DNS discovery for both per-replica endpoints.
 scrape_fragment="${repo_root}/deploy/deephost/prometheus-scrape-configs.yaml"
-rules_file="${repo_root}/deploy/deephost/simpledns-rules.yaml"
-dashboard="${repo_root}/deploy/deephost/dashboards/simpledns.json"
+rules_file="${repo_root}/deploy/deephost/deephost-rules.yaml"
+dashboard="${repo_root}/deploy/deephost/dashboards/deephost.json"
 jq empty "${dashboard}"
 grep -Fq 'groups:' "${rules_file}" || fail 'standalone Prometheus rule groups missing'
-grep -Fq 'alert: SimpleDNSWebUnavailable' "${rules_file}" || fail 'standalone web availability alert missing'
+grep -Fq 'alert: DeepHostWebUnavailable' "${rules_file}" || fail 'standalone web availability alert missing'
 grep -Fq 'otelcol_receiver_refused_spans' "${rules_file}" || fail 'standalone refused-spans alert missing'
 grep -Fq 'otelcol_receiver_failed_spans' "${rules_file}" || fail 'standalone failed-spans alert missing'
 [[ "$(grep -Fc 'dns-otel-metrics.dns.svc.cluster.local' "${scrape_fragment}")" == 2 ]] || fail 'both scrape jobs must use headless DNS discovery'
@@ -109,15 +109,15 @@ jq -e '[.panels[].targets[]] | length == 24' "${dashboard}" >/dev/null || fail '
 jq -e 'all(.panels[]; .datasource.type == "prometheus" and .datasource.uid == "deephost-prometheus")' "${dashboard}" >/dev/null || fail 'every Grafana panel must bind the existing Prometheus datasource'
 jq -e 'all(.panels[].targets[].expr | select(contains("service_name=\"")); contains("service_namespace=\"dns\""))' "${dashboard}" >/dev/null || fail 'service-scoped Grafana queries must also constrain the DNS namespace'
 jq -e 'any(.panels[]; .title == "Scrape and replica coverage")' "${dashboard}" >/dev/null || fail 'Grafana scrape and replica coverage panel missing'
-jq -e 'any(.panels[].targets[].expr; contains("up{job=\"simpledns-otel-metrics\"}"))' "${dashboard}" >/dev/null || fail 'Grafana application scrape coverage query missing'
-jq -e 'any(.panels[].targets[].expr; contains("up{job=\"simpledns-otel-collector\"}"))' "${dashboard}" >/dev/null || fail 'Grafana collector scrape coverage query missing'
+jq -e 'any(.panels[].targets[].expr; contains("up{job=\"deephost-otel-metrics\"}"))' "${dashboard}" >/dev/null || fail 'Grafana application scrape coverage query missing'
+jq -e 'any(.panels[].targets[].expr; contains("up{job=\"deephost-otel-collector\"}"))' "${dashboard}" >/dev/null || fail 'Grafana collector scrape coverage query missing'
 jq -e 'any(.panels[].targets[].expr; contains("count by (instance) (otelcol_process_uptime"))' "${dashboard}" >/dev/null || fail 'Grafana collector replica coverage query missing'
-jq -e 'any(.panels[].targets[].expr; contains("count by (k8s_pod_name) (simpledns_snapshot_ready"))' "${dashboard}" >/dev/null || fail 'Grafana authority replica coverage query missing'
-jq -e 'any(.panels[]; .title == "Firing SimpleDNS alerts" and any(.targets[].expr; contains("ALERTS{alertname=~\"SimpleDNS.*\",alertstate=\"firing\"}")))' "${dashboard}" >/dev/null || fail 'Grafana firing-alerts panel missing'
+jq -e 'any(.panels[].targets[].expr; contains("count by (k8s_pod_name) (deephost_snapshot_ready"))' "${dashboard}" >/dev/null || fail 'Grafana authority replica coverage query missing'
+jq -e 'any(.panels[]; .title == "Firing DeepHost alerts" and any(.targets[].expr; contains("ALERTS{alertname=~\"DeepHost.*\",alertstate=\"firing\"}")))' "${dashboard}" >/dev/null || fail 'Grafana firing-alerts panel missing'
 jq -e '(.panels[] | select(.id == 1) | reduce .fieldConfig.overrides[] as $override ({}; .[$override.matcher.options] = ($override.properties[] | select(.id == "thresholds") | .value.steps[] | select(.color == "green") | .value))) == {"A":2,"B":2,"C":2,"D":3}' "${dashboard}" >/dev/null || fail 'Grafana scrape and replica thresholds must match the production topology'
 jq -e 'any(.panels[]; .id == 11 and .options.colorMode == "none")' "${dashboard}" >/dev/null || fail 'Grafana inventory values must use neutral coloring'
 jq -e 'all(.panels[] | select(.id == 6 or .id == 9) | .targets[].expr; endswith("or on() vector(0)"))' "${dashboard}" >/dev/null || fail 'sparse failure panels must render an explicit zero fallback'
-grep -Fq 'simpledns_web_health_requests_total' "${dashboard}" || fail 'Grafana web heartbeat query missing'
+grep -Fq 'deephost_web_health_requests_total' "${dashboard}" || fail 'Grafana web heartbeat query missing'
 grep -Fq 'otelcol_receiver_refused_spans' "${dashboard}" || fail 'Grafana refused-spans query missing'
 if grep -Fq 'otelcol_receiver_failed_spans' "${dashboard}"; then
   fail 'Grafana must omit the inactive receiver_failed_spans series; alert rules retain defensive coverage'

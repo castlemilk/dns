@@ -259,3 +259,31 @@ func TestPaintAndVoices(t *testing.T) {
 		})
 	}
 }
+
+// Every letter of the wordmark must have a glyph. buildWordGlyph silently
+// skips a rune it has no shape for, so a wordmark change that forgot a letter
+// would ship a banner spelling something else entirely.
+func TestEveryWordmarkLetterHasAGlyph(t *testing.T) {
+	for _, letter := range brand.Wordmark {
+		if _, ok := brand.GlyphFor(letter); !ok {
+			t.Errorf("wordmark letter %q has no glyph, so the banner would silently omit it", letter)
+		}
+	}
+}
+
+// The banner has to fit a plain 80-column terminal, mark and all.
+func TestBannerFitsEightyColumns(t *testing.T) {
+	widest := 0
+	for _, line := range strings.Split(brand.Banner(brand.ModePlain), "\n") {
+		if n := len([]rune(line)); n > widest {
+			widest = n
+		}
+	}
+	if widest == 0 {
+		t.Fatal("banner rendered no content")
+	}
+	if widest > 80 {
+		t.Errorf("banner is %d columns wide; it must fit an 80-column terminal", widest)
+	}
+	t.Logf("banner is %d columns wide", widest)
+}

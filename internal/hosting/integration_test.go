@@ -17,10 +17,10 @@ import (
 )
 
 // Integration coverage against the local kind cluster. Every test here is
-// skipped unless SIMPLE_TEST_DEEPHOST_URL is set (spec2 §10.2), so `go test
+// skipped unless DEEPHOST_TEST_DEEPHOST_URL is set (spec2 §10.2), so `go test
 // ./...` stays hermetic.
 //
-//	SIMPLE_TEST_DEEPHOST_URL=http://127.0.0.1:30081 go test -run Integration ./internal/hosting/...
+//	DEEPHOST_TEST_DEEPHOST_URL=http://127.0.0.1:30081 go test -run Integration ./internal/hosting/...
 //
 // The tenant is fixed to simple-test-hosting: the demo and deephost tenants on
 // that cluster are never touched, and every app this file creates is deleted in
@@ -29,16 +29,16 @@ const integrationTenant = "simple-test-hosting"
 
 // integrationBuildBudget bounds how long a git build is polled. The build runs
 // a real Job on the cluster, so the default keeps one test run short; set
-// SIMPLE_TEST_BUILD_SECONDS to wait for a full build.
+// DEEPHOST_TEST_BUILD_SECONDS to wait for a full build.
 const integrationBuildBudget = 90 * time.Second
 
 func integrationEngine(t *testing.T) hosting.Engine {
 	t.Helper()
-	url := os.Getenv("SIMPLE_TEST_DEEPHOST_URL")
+	url := os.Getenv("DEEPHOST_TEST_DEEPHOST_URL")
 	if url == "" {
-		t.Skip("SIMPLE_TEST_DEEPHOST_URL is not set; skipping the DeepHost integration test")
+		t.Skip("DEEPHOST_TEST_DEEPHOST_URL is not set; skipping the DeepHost integration test")
 	}
-	return deephost.New(url, os.Getenv("SIMPLE_TEST_DEEPHOST_TOKEN"))
+	return deephost.New(url, os.Getenv("DEEPHOST_TEST_DEEPHOST_TOKEN"))
 }
 
 func integrationApp(t *testing.T, engine hosting.Engine, name string, spec hosting.AppSpec) string {
@@ -152,11 +152,11 @@ func TestIntegrationHostingEngineGitBuild(t *testing.T) {
 	// credentials, so spec2's suggested benebsworth/deephost fails with
 	// "could not read Username for https://github.com" (verified on the kind
 	// cluster). Any public repo builds as-is under the static framework.
-	repository := os.Getenv("SIMPLE_TEST_REPO")
+	repository := os.Getenv("DEEPHOST_TEST_REPO")
 	if repository == "" {
 		repository = "https://github.com/github/gitignore"
 	}
-	path := os.Getenv("SIMPLE_TEST_REPO_PATH")
+	path := os.Getenv("DEEPHOST_TEST_REPO_PATH")
 
 	zoneName := "it-" + strconv.FormatInt(time.Now().UnixNano(), 36) + ".example"
 	name := hosting.AppName(integrationTenant, zoneName)
@@ -190,7 +190,7 @@ func TestIntegrationHostingEngineGitBuild(t *testing.T) {
 	}
 
 	budget := integrationBuildBudget
-	if raw := os.Getenv("SIMPLE_TEST_BUILD_SECONDS"); raw != "" {
+	if raw := os.Getenv("DEEPHOST_TEST_BUILD_SECONDS"); raw != "" {
 		if seconds, convErr := strconv.Atoi(raw); convErr == nil && seconds > 0 {
 			budget = time.Duration(seconds) * time.Second
 		}
@@ -219,7 +219,7 @@ func TestIntegrationHostingEngineGitBuild(t *testing.T) {
 		t.Fatalf("build failed on the cluster: %s", last.Reason)
 	}
 	if !last.Terminal() {
-		t.Skipf("the build was still %q after %s; raise SIMPLE_TEST_BUILD_SECONDS to wait for it", last.Phase, budget)
+		t.Skipf("the build was still %q after %s; raise DEEPHOST_TEST_BUILD_SECONDS to wait for it", last.Phase, budget)
 	}
 	if last.CreatedAt.IsZero() {
 		t.Log("this server reports no build timestamps; deploy durations are shown as observed")
@@ -452,11 +452,11 @@ func TestIntegrationHostingEngineResolvedCommit(t *testing.T) {
 	engine := integrationEngine(t)
 	ctx := context.Background()
 
-	repository := os.Getenv("SIMPLE_TEST_REPO")
+	repository := os.Getenv("DEEPHOST_TEST_REPO")
 	if repository == "" {
 		repository = "https://github.com/github/gitignore"
 	}
-	revision := os.Getenv("SIMPLE_TEST_REPO_REVISION")
+	revision := os.Getenv("DEEPHOST_TEST_REPO_REVISION")
 	if revision == "" {
 		revision = "main"
 	}
@@ -469,14 +469,14 @@ func TestIntegrationHostingEngineResolvedCommit(t *testing.T) {
 		Framework: hosting.FrameworkStatic,
 		RepoURL:   repository,
 		Revision:  revision,
-		Path:      os.Getenv("SIMPLE_TEST_REPO_PATH"),
+		Path:      os.Getenv("DEEPHOST_TEST_REPO_PATH"),
 	})
 	if err != nil {
 		t.Fatalf("CreateGitBuild: %v", err)
 	}
 
 	budget := integrationBuildBudget
-	if raw := os.Getenv("SIMPLE_TEST_BUILD_SECONDS"); raw != "" {
+	if raw := os.Getenv("DEEPHOST_TEST_BUILD_SECONDS"); raw != "" {
 		if seconds, convErr := strconv.Atoi(raw); convErr == nil && seconds > 0 {
 			budget = time.Duration(seconds) * time.Second
 		}
@@ -498,7 +498,7 @@ func TestIntegrationHostingEngineResolvedCommit(t *testing.T) {
 		t.Fatalf("build failed on the cluster: %s", last.Reason)
 	}
 	if !last.Terminal() {
-		t.Skipf("the build was still %q after %s; raise SIMPLE_TEST_BUILD_SECONDS", last.Phase, budget)
+		t.Skipf("the build was still %q after %s; raise DEEPHOST_TEST_BUILD_SECONDS", last.Phase, budget)
 	}
 
 	// The release may take another reconcile to appear with its status filled.

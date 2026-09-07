@@ -60,7 +60,7 @@ const sampleRecords: SampleRecord[] = [
     name: "@",
     type: RecordType.MX,
     ttl: 300,
-    value: "10 mx1.simple.host.",
+    value: "10 mx1.deephost.dev.",
     source: RecordSource.MAIL,
   },
   {
@@ -68,7 +68,7 @@ const sampleRecords: SampleRecord[] = [
     name: "@",
     type: RecordType.TXT,
     ttl: 3600,
-    value: '"v=spf1 include:spf.simple.host -all"',
+    value: '"v=spf1 include:spf.deephost.dev -all"',
     source: RecordSource.MAIL,
   },
   {
@@ -108,7 +108,7 @@ const sampleRecords: SampleRecord[] = [
     type: RecordType.SOA,
     ttl: 3600,
     // The control plane's soaValue format: <ns1> hostmaster.<zone>. <serial> 3600 600 1209600 300
-    value: `ns1.simple.host. hostmaster.acme.dev. ${sampleSerial} 3600 600 1209600 300`,
+    value: `ns1.deephost.dev. hostmaster.acme.dev. ${sampleSerial} 3600 600 1209600 300`,
     managed: true,
   },
   {
@@ -116,7 +116,7 @@ const sampleRecords: SampleRecord[] = [
     name: "@",
     type: RecordType.NS,
     ttl: 3600,
-    value: "ns1.simple.host.",
+    value: "ns1.deephost.dev.",
     managed: true,
   },
   {
@@ -124,7 +124,7 @@ const sampleRecords: SampleRecord[] = [
     name: "@",
     type: RecordType.NS,
     ttl: 3600,
-    value: "ns2.simple.host.",
+    value: "ns2.deephost.dev.",
     managed: true,
   },
 ];
@@ -135,7 +135,7 @@ export const sampleZone: Zone = create(ZoneSchema, {
   serial: sampleSerial,
   createdAt: sampleTimestamp,
   updatedAt: sampleTimestamp,
-  nameservers: ["ns1.simple.host.", "ns2.simple.host."],
+  nameservers: ["ns1.deephost.dev.", "ns2.deephost.dev."],
   records: sampleRecords.map((record) => ({
     id: record.id,
     name: record.name,

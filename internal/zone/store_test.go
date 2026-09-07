@@ -131,14 +131,14 @@ func TestStoreMetricsRecordFailedWriteAndAdmission(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	if !hasStorePoint(collected, "simpledns.store.transactions", map[string]string{
+	if !hasStorePoint(collected, "deephost.store.transactions", map[string]string{
 		"db.operation":        "create_zone",
 		"db.transaction.type": "write",
 		"outcome":             "error",
 	}) {
 		t.Fatal("failed create transaction metric is absent")
 	}
-	if !hasStorePoint(collected, "simpledns.snapshot.admissions", map[string]string{"outcome": "error"}) {
+	if !hasStorePoint(collected, "deephost.snapshot.admissions", map[string]string{"outcome": "error"}) {
 		t.Fatal("failed snapshot admission metric is absent")
 	}
 }

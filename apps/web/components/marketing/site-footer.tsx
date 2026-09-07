@@ -8,7 +8,7 @@ import Link from "next/link";
 export function SiteFooter() {
   return (
     <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-line px-6 py-7 text-[13px] text-muted-foreground lg:px-16">
-      <span>© simple</span>
+      <span>© deep hosting</span>
       <div className="flex items-center gap-5">
         <Link
           href="/domains"

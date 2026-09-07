@@ -114,7 +114,7 @@ func withSignals(metricsEnabled, tracesEnabled bool) MetricsOption {
 	}
 }
 
-// NewMetrics registers the complete simpledns metric set with meter.
+// NewMetrics registers the complete deephost metric set with meter.
 func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) {
 	config := metricsConfig{
 		clock:          time.Now,
@@ -141,118 +141,118 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		return m, nil
 	}
 	var err error
-	if m.httpRequests, err = meter.Int64Counter("simpledns.http.server.requests", metric.WithDescription("HTTP requests received by the service")); err != nil {
+	if m.httpRequests, err = meter.Int64Counter("deephost.http.server.requests", metric.WithDescription("HTTP requests received by the service")); err != nil {
 		return nil, instrumentError("HTTP request counter", err)
 	}
-	if m.httpDuration, err = meter.Float64Histogram("simpledns.http.server.duration", metric.WithDescription("HTTP request duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.httpDuration, err = meter.Float64Histogram("deephost.http.server.duration", metric.WithDescription("HTTP request duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("HTTP duration histogram", err)
 	}
-	if m.authFailures, err = meter.Int64Counter("simpledns.http.auth.failures", metric.WithDescription("Rejected bearer authentication attempts")); err != nil {
+	if m.authFailures, err = meter.Int64Counter("deephost.http.auth.failures", metric.WithDescription("Rejected bearer authentication attempts")); err != nil {
 		return nil, instrumentError("authentication failure counter", err)
 	}
-	if m.rpcRequests, err = meter.Int64Counter("simpledns.rpc.server.requests", metric.WithDescription("Connect RPC requests completed by the service")); err != nil {
+	if m.rpcRequests, err = meter.Int64Counter("deephost.rpc.server.requests", metric.WithDescription("Connect RPC requests completed by the service")); err != nil {
 		return nil, instrumentError("RPC request counter", err)
 	}
-	if m.rpcDuration, err = meter.Float64Histogram("simpledns.rpc.server.duration", metric.WithDescription("Connect RPC request duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.rpcDuration, err = meter.Float64Histogram("deephost.rpc.server.duration", metric.WithDescription("Connect RPC request duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("RPC duration histogram", err)
 	}
-	if m.controlMutations, err = meter.Int64Counter("simpledns.control.mutations", metric.WithDescription("Control-plane zone and record mutations")); err != nil {
+	if m.controlMutations, err = meter.Int64Counter("deephost.control.mutations", metric.WithDescription("Control-plane zone and record mutations")); err != nil {
 		return nil, instrumentError("control mutation counter", err)
 	}
-	if m.controlDuration, err = meter.Float64Histogram("simpledns.control.mutation.duration", metric.WithDescription("Control-plane mutation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.controlDuration, err = meter.Float64Histogram("deephost.control.mutation.duration", metric.WithDescription("Control-plane mutation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("control mutation duration histogram", err)
 	}
-	if m.dnsQueries, err = meter.Int64Counter("simpledns.dns.queries", metric.WithDescription("Authoritative DNS queries completed")); err != nil {
+	if m.dnsQueries, err = meter.Int64Counter("deephost.dns.queries", metric.WithDescription("Authoritative DNS queries completed")); err != nil {
 		return nil, instrumentError("DNS query counter", err)
 	}
-	if m.dnsDuration, err = meter.Float64Histogram("simpledns.dns.query.duration", metric.WithDescription("Authoritative DNS query duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.dnsDuration, err = meter.Float64Histogram("deephost.dns.query.duration", metric.WithDescription("Authoritative DNS query duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("DNS query duration histogram", err)
 	}
-	if m.dnsResponseSize, err = meter.Int64Histogram("simpledns.dns.response.size", metric.WithDescription("Encoded DNS response size before transport framing"), metric.WithUnit("By"), metric.WithExplicitBucketBoundaries(sizeBuckets...)); err != nil {
+	if m.dnsResponseSize, err = meter.Int64Histogram("deephost.dns.response.size", metric.WithDescription("Encoded DNS response size before transport framing"), metric.WithUnit("By"), metric.WithExplicitBucketBoundaries(sizeBuckets...)); err != nil {
 		return nil, instrumentError("DNS response size histogram", err)
 	}
-	if m.dnsTruncated, err = meter.Int64Counter("simpledns.dns.responses.truncated", metric.WithDescription("Truncated authoritative DNS responses")); err != nil {
+	if m.dnsTruncated, err = meter.Int64Counter("deephost.dns.responses.truncated", metric.WithDescription("Truncated authoritative DNS responses")); err != nil {
 		return nil, instrumentError("DNS truncation counter", err)
 	}
-	if m.dnsWriteFailures, err = meter.Int64Counter("simpledns.dns.write.failures", metric.WithDescription("Failures writing authoritative DNS responses")); err != nil {
+	if m.dnsWriteFailures, err = meter.Int64Counter("deephost.dns.write.failures", metric.WithDescription("Failures writing authoritative DNS responses")); err != nil {
 		return nil, instrumentError("DNS write failure counter", err)
 	}
-	if m.snapshotBuilds, err = meter.Int64Counter("simpledns.snapshot.builds", metric.WithDescription("Control-plane snapshot build attempts")); err != nil {
+	if m.snapshotBuilds, err = meter.Int64Counter("deephost.snapshot.builds", metric.WithDescription("Control-plane snapshot build attempts")); err != nil {
 		return nil, instrumentError("snapshot build counter", err)
 	}
-	if m.snapshotBuildTime, err = meter.Float64Histogram("simpledns.snapshot.build.duration", metric.WithDescription("Control-plane snapshot build duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.snapshotBuildTime, err = meter.Float64Histogram("deephost.snapshot.build.duration", metric.WithDescription("Control-plane snapshot build duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("snapshot build duration histogram", err)
 	}
-	if m.snapshotSize, err = meter.Int64Histogram("simpledns.snapshot.size", metric.WithDescription("Snapshot payload size"), metric.WithUnit("By"), metric.WithExplicitBucketBoundaries(sizeBuckets...)); err != nil {
+	if m.snapshotSize, err = meter.Int64Histogram("deephost.snapshot.size", metric.WithDescription("Snapshot payload size"), metric.WithUnit("By"), metric.WithExplicitBucketBoundaries(sizeBuckets...)); err != nil {
 		return nil, instrumentError("snapshot size histogram", err)
 	}
-	if m.snapshotFetches, err = meter.Int64Counter("simpledns.snapshot.fetches", metric.WithDescription("Authority snapshot fetch attempts")); err != nil {
+	if m.snapshotFetches, err = meter.Int64Counter("deephost.snapshot.fetches", metric.WithDescription("Authority snapshot fetch attempts")); err != nil {
 		return nil, instrumentError("snapshot fetch counter", err)
 	}
-	if m.snapshotFetchTime, err = meter.Float64Histogram("simpledns.snapshot.fetch.duration", metric.WithDescription("Authority snapshot fetch duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.snapshotFetchTime, err = meter.Float64Histogram("deephost.snapshot.fetch.duration", metric.WithDescription("Authority snapshot fetch duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("snapshot fetch duration histogram", err)
 	}
-	if m.snapshotApplies, err = meter.Int64Counter("simpledns.snapshot.applies", metric.WithDescription("Authority snapshot validation and apply attempts")); err != nil {
+	if m.snapshotApplies, err = meter.Int64Counter("deephost.snapshot.applies", metric.WithDescription("Authority snapshot validation and apply attempts")); err != nil {
 		return nil, instrumentError("snapshot apply counter", err)
 	}
-	if m.snapshotApplyTime, err = meter.Float64Histogram("simpledns.snapshot.apply.duration", metric.WithDescription("Authority snapshot validation and apply duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.snapshotApplyTime, err = meter.Float64Histogram("deephost.snapshot.apply.duration", metric.WithDescription("Authority snapshot validation and apply duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("snapshot apply duration histogram", err)
 	}
-	if m.snapshotAdmissions, err = meter.Int64Counter("simpledns.snapshot.admissions", metric.WithDescription("Aggregate control-plane snapshot admission decisions")); err != nil {
+	if m.snapshotAdmissions, err = meter.Int64Counter("deephost.snapshot.admissions", metric.WithDescription("Aggregate control-plane snapshot admission decisions")); err != nil {
 		return nil, instrumentError("snapshot admission counter", err)
 	}
-	if m.snapshotAdmitTime, err = meter.Float64Histogram("simpledns.snapshot.admission.duration", metric.WithDescription("Aggregate snapshot admission duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.snapshotAdmitTime, err = meter.Float64Histogram("deephost.snapshot.admission.duration", metric.WithDescription("Aggregate snapshot admission duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("snapshot admission duration histogram", err)
 	}
-	if m.snapshotCache, err = meter.Int64Counter("simpledns.snapshot.cache.operations", metric.WithDescription("Authority snapshot cache operations")); err != nil {
+	if m.snapshotCache, err = meter.Int64Counter("deephost.snapshot.cache.operations", metric.WithDescription("Authority snapshot cache operations")); err != nil {
 		return nil, instrumentError("snapshot cache operation counter", err)
 	}
-	if m.snapshotCacheTime, err = meter.Float64Histogram("simpledns.snapshot.cache.operation.duration", metric.WithDescription("Authority snapshot cache operation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.snapshotCacheTime, err = meter.Float64Histogram("deephost.snapshot.cache.operation.duration", metric.WithDescription("Authority snapshot cache operation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("snapshot cache duration histogram", err)
 	}
-	if m.checksumFailures, err = meter.Int64Counter("simpledns.snapshot.checksum.failures", metric.WithDescription("Snapshots rejected because of an invalid checksum")); err != nil {
+	if m.checksumFailures, err = meter.Int64Counter("deephost.snapshot.checksum.failures", metric.WithDescription("Snapshots rejected because of an invalid checksum")); err != nil {
 		return nil, instrumentError("snapshot checksum failure counter", err)
 	}
-	if m.readinessChecks, err = meter.Int64Counter("simpledns.readiness.checks", metric.WithDescription("Readiness probe decisions")); err != nil {
+	if m.readinessChecks, err = meter.Int64Counter("deephost.readiness.checks", metric.WithDescription("Readiness probe decisions")); err != nil {
 		return nil, instrumentError("readiness check counter", err)
 	}
-	if m.storeTransactions, err = meter.Int64Counter("simpledns.store.transactions", metric.WithDescription("bbolt transactions completed by the zone store")); err != nil {
+	if m.storeTransactions, err = meter.Int64Counter("deephost.store.transactions", metric.WithDescription("bbolt transactions completed by the zone store")); err != nil {
 		return nil, instrumentError("store transaction counter", err)
 	}
-	if m.storeDuration, err = meter.Float64Histogram("simpledns.store.transaction.duration", metric.WithDescription("bbolt transaction duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.storeDuration, err = meter.Float64Histogram("deephost.store.transaction.duration", metric.WithDescription("bbolt transaction duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("store transaction duration histogram", err)
 	}
-	if m.authorityCompiles, err = meter.Int64Counter("simpledns.authoritative.snapshot.compiles", metric.WithDescription("Authoritative in-memory snapshot compilation attempts")); err != nil {
+	if m.authorityCompiles, err = meter.Int64Counter("deephost.authoritative.snapshot.compiles", metric.WithDescription("Authoritative in-memory snapshot compilation attempts")); err != nil {
 		return nil, instrumentError("authoritative compile counter", err)
 	}
-	if m.authorityCompile, err = meter.Float64Histogram("simpledns.authoritative.snapshot.compile.duration", metric.WithDescription("Authoritative in-memory snapshot compilation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.authorityCompile, err = meter.Float64Histogram("deephost.authoritative.snapshot.compile.duration", metric.WithDescription("Authoritative in-memory snapshot compilation duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("authoritative compile duration histogram", err)
 	}
-	if m.authorityPublishes, err = meter.Int64Counter("simpledns.authoritative.snapshot.publishes", metric.WithDescription("Atomic authoritative snapshot publications")); err != nil {
+	if m.authorityPublishes, err = meter.Int64Counter("deephost.authoritative.snapshot.publishes", metric.WithDescription("Atomic authoritative snapshot publications")); err != nil {
 		return nil, instrumentError("authoritative publish counter", err)
 	}
-	if m.engineRequests, err = meter.Int64Counter("simpledns.engine.requests", metric.WithDescription("Calls the facades made to a hosting, mail or billing engine")); err != nil {
+	if m.engineRequests, err = meter.Int64Counter("deephost.engine.requests", metric.WithDescription("Calls the facades made to a hosting, mail or billing engine")); err != nil {
 		return nil, instrumentError("engine request counter", err)
 	}
-	if m.engineDuration, err = meter.Float64Histogram("simpledns.engine.request.duration", metric.WithDescription("Engine call duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
+	if m.engineDuration, err = meter.Float64Histogram("deephost.engine.request.duration", metric.WithDescription("Engine call duration"), metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(durationBuckets...)); err != nil {
 		return nil, instrumentError("engine request duration histogram", err)
 	}
-	if m.gatewayResolutions, err = meter.Int64Counter("simpledns.hosting.gateway_resolution", metric.WithDescription("Gateway hostname resolution outcomes")); err != nil {
+	if m.gatewayResolutions, err = meter.Int64Counter("deephost.hosting.gateway_resolution", metric.WithDescription("Gateway hostname resolution outcomes")); err != nil {
 		return nil, instrumentError("gateway resolution counter", err)
 	}
-	if m.billingWebhooks, err = meter.Int64Counter("simpledns.billing.webhooks", metric.WithDescription("Stripe webhook deliveries by outcome")); err != nil {
+	if m.billingWebhooks, err = meter.Int64Counter("deephost.billing.webhooks", metric.WithDescription("Stripe webhook deliveries by outcome")); err != nil {
 		return nil, instrumentError("billing webhook counter", err)
 	}
-	if m.billingReconciles, err = meter.Int64Counter("simpledns.billing.reconcile", metric.WithDescription("Billing reconciliation passes")); err != nil {
+	if m.billingReconciles, err = meter.Int64Counter("deephost.billing.reconcile", metric.WithDescription("Billing reconciliation passes")); err != nil {
 		return nil, instrumentError("billing reconcile counter", err)
 	}
-	if m.hostingUploads, err = meter.Int64Counter("simpledns.hosting.uploads", metric.WithDescription("Folder upload outcomes")); err != nil {
+	if m.hostingUploads, err = meter.Int64Counter("deephost.hosting.uploads", metric.WithDescription("Folder upload outcomes")); err != nil {
 		return nil, instrumentError("hosting upload counter", err)
 	}
-	if m.activityEvents, err = meter.Int64Counter("simpledns.activity.events", metric.WithDescription("Activity events recorded")); err != nil {
+	if m.activityEvents, err = meter.Int64Counter("deephost.activity.events", metric.WithDescription("Activity events recorded")); err != nil {
 		return nil, instrumentError("activity event counter", err)
 	}
-	if m.activityDropped, err = meter.Int64Counter("simpledns.activity.dropped", metric.WithDescription("Activity events that could not be stored")); err != nil {
+	if m.activityDropped, err = meter.Int64Counter("deephost.activity.dropped", metric.WithDescription("Activity events that could not be stored")); err != nil {
 		return nil, instrumentError("activity drop counter", err)
 	}
 	m.dnsOptions = make(map[dnsLabels]dnsMeasurementOptions, len(transports)*len(dnsTypes)*len(dnsResponseCodes))
@@ -280,7 +280,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 	}
 
 	if _, err = meter.Int64ObservableGauge(
-		"simpledns.inventory.zones",
+		"deephost.inventory.zones",
 		metric.WithDescription("Zones in the active snapshot"),
 		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
 			observer.Observe(m.inventoryZones.Load())
@@ -290,7 +290,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		return nil, instrumentError("zone inventory gauge", err)
 	}
 	if _, err = meter.Int64ObservableGauge(
-		"simpledns.inventory.records",
+		"deephost.inventory.records",
 		metric.WithDescription("Records in the active snapshot, including managed records"),
 		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
 			observer.Observe(m.inventoryRecords.Load())
@@ -300,7 +300,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		return nil, instrumentError("record inventory gauge", err)
 	}
 	if _, err = meter.Int64ObservableGauge(
-		"simpledns.snapshot.loaded",
+		"deephost.snapshot.loaded",
 		metric.WithDescription("Whether the authority has loaded a valid snapshot"),
 		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
 			if m.snapshotLoaded.Load() {
@@ -314,7 +314,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		return nil, instrumentError("snapshot loaded gauge", err)
 	}
 	if _, err = meter.Int64ObservableGauge(
-		"simpledns.snapshot.ready",
+		"deephost.snapshot.ready",
 		metric.WithDescription("Whether the authority snapshot is within its staleness budget"),
 		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
 			lastValid := m.snapshotLastValidNS.Load()
@@ -330,7 +330,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		return nil, instrumentError("snapshot ready gauge", err)
 	}
 	if _, err = meter.Float64ObservableGauge(
-		"simpledns.snapshot.age",
+		"deephost.snapshot.age",
 		metric.WithDescription("Time since the last successfully validated snapshot response or cache"),
 		metric.WithUnit("s"),
 		metric.WithFloat64Callback(func(_ context.Context, observer metric.Float64Observer) error {
@@ -347,7 +347,7 @@ func NewMetrics(meter metric.Meter, options ...MetricsOption) (*Metrics, error) 
 		engineGaugeOptions[engine] = metric.WithAttributes(attribute.String("engine", engine))
 	}
 	if _, err = meter.Int64ObservableGauge(
-		"simpledns.engine.reachable",
+		"deephost.engine.reachable",
 		metric.WithDescription("Whether the last probe of each engine succeeded (0 when unconfigured)"),
 		metric.WithInt64Callback(func(_ context.Context, observer metric.Int64Observer) error {
 			for engine, state := range m.engineReachable {

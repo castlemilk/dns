@@ -19,7 +19,7 @@ import { getOperatorToken } from "@/lib/operator-session";
 import { getApiBaseUrl } from "@/lib/operator-transport";
 
 /**
- * The approval screen `simple auth login` opens, rendered inside the console's
+ * The approval screen `deephost auth login` opens, rendered inside the console's
  * own shell so it is only reachable once the operator gate is unlocked.
  *
  * It is deliberately blunt about what approving does. There is no identity
@@ -55,7 +55,7 @@ export function CliAuthorize(query: CallbackQuery) {
     if (!token) {
       setPhase("failed");
       setFailure(
-        "This tab is no longer holding an operator token. Unlock the console again, then re-run `simple auth login`.",
+        "This tab is no longer holding an operator token. Unlock the console again, then re-run `deephost auth login`.",
       );
       return;
     }
@@ -92,10 +92,10 @@ export function CliAuthorize(query: CallbackQuery) {
     <CliPanel
       tone="info"
       icon={<SquareTerminal className="size-[18px]" aria-hidden="true" />}
-      title="Hand this console's operator token to the simple CLI?"
+      title="Hand this console's operator token to the deephost CLI?"
       lead={
         <>
-          Something running <CliCode>simple auth login</CliCode> on this machine
+          Something running <CliCode>deephost auth login</CliCode> on this machine
           opened this page and is waiting on a loopback port for an answer.
         </>
       }
@@ -143,7 +143,7 @@ export function CliAuthorize(query: CallbackQuery) {
           <span>
             The console cannot check which program is listening on port{" "}
             {request.port}. Approve only if you just ran{" "}
-            <CliCode>simple auth login</CliCode> yourself.
+            <CliCode>deephost auth login</CliCode> yourself.
           </span>
         </p>
         <p>
@@ -152,9 +152,9 @@ export function CliAuthorize(query: CallbackQuery) {
         </p>
         <p>
           The CLI writes it to{" "}
-          <CliCode>~/.config/simple/config.json</CliCode> with{" "}
+          <CliCode>~/.config/deephost/config.json</CliCode> with{" "}
           <CliCode>0600</CliCode> permissions and keeps it until you run{" "}
-          <CliCode>simple auth logout</CliCode>. Revoking it everywhere means
+          <CliCode>deephost auth logout</CliCode>. Revoking it everywhere means
           rotating <CliCode>DNS_API_BEARER_TOKEN</CliCode> on the control plane;
           there is no per-CLI revocation.
         </p>
@@ -229,7 +229,7 @@ function InvalidLink({ problem }: { problem: string }) {
         {problem}
       </p>
       <p className="text-ui mt-3 leading-[1.55] text-subtle">
-        <CliCode>simple auth login</CliCode> opens this page with a callback on{" "}
+        <CliCode>deephost auth login</CliCode> opens this page with a callback on{" "}
         <CliCode>127.0.0.1</CliCode>, a code challenge and a state. Run it again
         and use the link it opens rather than a saved or edited one.
       </p>

@@ -209,13 +209,13 @@ func TestHTTPAndConnectPanicFinalizationIsBoundedAndRepanics(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	httpMetric := findMetric(collected, "simpledns.http.server.requests")
+	httpMetric := findMetric(collected, "deephost.http.server.requests")
 	httpSum, ok := httpMetric.Data.(metricdata.Sum[int64])
 	if !ok || len(httpSum.DataPoints) != 1 || httpSum.DataPoints[0].Value != 1 {
 		t.Fatalf("HTTP request metric = %#v, want one request", httpMetric.Data)
 	}
 	assertIntAttribute(t, httpSum.DataPoints[0].Attributes, "http.response.status_code", http.StatusAccepted)
-	rpcMetric := findMetric(collected, "simpledns.rpc.server.requests")
+	rpcMetric := findMetric(collected, "deephost.rpc.server.requests")
 	rpcSum, ok := rpcMetric.Data.(metricdata.Sum[int64])
 	if !ok || len(rpcSum.DataPoints) != 1 || rpcSum.DataPoints[0].Value != 1 {
 		t.Fatalf("RPC request metric = %#v, want one request", rpcMetric.Data)

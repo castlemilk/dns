@@ -104,7 +104,7 @@ const installSignalShutdown = (state: TelemetryState) => {
   }
 };
 
-const stateKey = Symbol.for("simpledns.web.opentelemetry.state");
+const stateKey = Symbol.for("deephost.web.opentelemetry.state");
 const globalState = globalThis as typeof globalThis & {
   [stateKey]?: TelemetryState;
 };
@@ -113,8 +113,8 @@ const config = getTelemetryConfig();
 
 if (!globalState[stateKey] && (config.metrics || config.traces)) {
   const applicationResource = resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: "simpledns-web",
-    [ATTR_SERVICE_NAMESPACE]: "simpledns",
+    [ATTR_SERVICE_NAME]: "deephost-web",
+    [ATTR_SERVICE_NAMESPACE]: "deephost",
     [ATTR_SERVICE_VERSION]: "0.1.0",
   });
   // Environment resource attributes intentionally override the safe defaults
@@ -187,9 +187,9 @@ if (!globalState[stateKey] && (config.metrics || config.traces)) {
 
   if (config.traces) {
     const startupSpan = trace
-      .getTracer("simpledns.web", "0.1.0")
-      .startSpan("simpledns.web.server.start");
-    startupSpan.setAttribute("next.span_type", "SimpleDNS.serverStart");
+      .getTracer("deephost.web", "0.1.0")
+      .startSpan("deephost.web.server.start");
+    startupSpan.setAttribute("next.span_type", "DeepHost.serverStart");
     startupSpan.end();
   }
 

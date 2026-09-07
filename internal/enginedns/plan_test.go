@@ -15,11 +15,11 @@ func record(id, name string, kind zone.RecordType, ttl uint32, value, source str
 
 func testZone(records ...zone.Record) zone.Zone {
 	all := []zone.Record{
-		{ID: "soa", Name: "@", Type: zone.TypeSOA, TTL: 3600, Value: "ns1.simple.test. hostmaster.acme.dev. 1 3600 600 1209600 300", Managed: true},
-		{ID: "ns", Name: "@", Type: zone.TypeNS, TTL: 3600, Value: "ns1.simple.test.", Managed: true},
+		{ID: "soa", Name: "@", Type: zone.TypeSOA, TTL: 3600, Value: "ns1.deephost.test. hostmaster.acme.dev. 1 3600 600 1209600 300", Managed: true},
+		{ID: "ns", Name: "@", Type: zone.TypeNS, TTL: 3600, Value: "ns1.deephost.test.", Managed: true},
 	}
 	all = append(all, records...)
-	return zone.Zone{ID: "z1", Name: "acme.dev", Nameservers: []string{"ns1.simple.test."}, Records: all}
+	return zone.Zone{ID: "z1", Name: "acme.dev", Nameservers: []string{"ns1.deephost.test."}, Records: all}
 }
 
 func desiredGateway() []zone.Record {
@@ -161,7 +161,7 @@ func TestPlanAlignsATtlZeroMxBeforeReplacingIt(t *testing.T) {
 	t.Parallel()
 
 	existing := testZone(record("r1", "@", zone.TypeMX, 0, "5 mail.elsewhere.test.", enginedns.SourceUser))
-	desired := []zone.Record{{Name: "@", Type: zone.TypeMX, TTL: 3600, Value: "10 mx1.simple.host."}}
+	desired := []zone.Record{{Name: "@", Type: zone.TypeMX, TTL: 3600, Value: "10 mx1.deephost.dev."}}
 	plan, err := enginedns.Plan(existing, enginedns.SourceMail, desired)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

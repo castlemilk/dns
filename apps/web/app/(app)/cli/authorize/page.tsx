@@ -5,7 +5,7 @@ import { CliAuthorize } from "@/components/cli/cli-authorize";
 export const metadata: Metadata = { title: "Authorize the CLI" };
 
 /**
- * `simple auth login` opens
+ * `deephost auth login` opens
  * `/cli/authorize?callback=http://127.0.0.1:<port>/callback&challenge=<S256>&state=<state>`.
  * Those three names are the whole contract; the PKCE verifier is never sent
  * here, so the console proves it is answering that invocation by echoing the

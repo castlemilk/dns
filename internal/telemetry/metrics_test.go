@@ -10,6 +10,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"os"
+	"regexp"
 )
 
 func TestMetricsEmitBoundedCatalogAndAttributes(t *testing.T) {
@@ -51,41 +53,41 @@ func TestMetricsEmitBoundedCatalogAndAttributes(t *testing.T) {
 		t.Fatalf("Collect: %v", err)
 	}
 	wantNames := []string{
-		"simpledns.http.server.requests",
-		"simpledns.http.server.duration",
-		"simpledns.http.auth.failures",
-		"simpledns.rpc.server.requests",
-		"simpledns.rpc.server.duration",
-		"simpledns.control.mutations",
-		"simpledns.control.mutation.duration",
-		"simpledns.dns.queries",
-		"simpledns.dns.query.duration",
-		"simpledns.dns.response.size",
-		"simpledns.dns.responses.truncated",
-		"simpledns.dns.write.failures",
-		"simpledns.snapshot.builds",
-		"simpledns.snapshot.build.duration",
-		"simpledns.snapshot.size",
-		"simpledns.snapshot.fetches",
-		"simpledns.snapshot.fetch.duration",
-		"simpledns.snapshot.applies",
-		"simpledns.snapshot.apply.duration",
-		"simpledns.snapshot.admissions",
-		"simpledns.snapshot.admission.duration",
-		"simpledns.snapshot.cache.operations",
-		"simpledns.snapshot.cache.operation.duration",
-		"simpledns.snapshot.checksum.failures",
-		"simpledns.readiness.checks",
-		"simpledns.store.transactions",
-		"simpledns.store.transaction.duration",
-		"simpledns.authoritative.snapshot.compiles",
-		"simpledns.authoritative.snapshot.compile.duration",
-		"simpledns.authoritative.snapshot.publishes",
-		"simpledns.inventory.zones",
-		"simpledns.inventory.records",
-		"simpledns.snapshot.loaded",
-		"simpledns.snapshot.ready",
-		"simpledns.snapshot.age",
+		"deephost.http.server.requests",
+		"deephost.http.server.duration",
+		"deephost.http.auth.failures",
+		"deephost.rpc.server.requests",
+		"deephost.rpc.server.duration",
+		"deephost.control.mutations",
+		"deephost.control.mutation.duration",
+		"deephost.dns.queries",
+		"deephost.dns.query.duration",
+		"deephost.dns.response.size",
+		"deephost.dns.responses.truncated",
+		"deephost.dns.write.failures",
+		"deephost.snapshot.builds",
+		"deephost.snapshot.build.duration",
+		"deephost.snapshot.size",
+		"deephost.snapshot.fetches",
+		"deephost.snapshot.fetch.duration",
+		"deephost.snapshot.applies",
+		"deephost.snapshot.apply.duration",
+		"deephost.snapshot.admissions",
+		"deephost.snapshot.admission.duration",
+		"deephost.snapshot.cache.operations",
+		"deephost.snapshot.cache.operation.duration",
+		"deephost.snapshot.checksum.failures",
+		"deephost.readiness.checks",
+		"deephost.store.transactions",
+		"deephost.store.transaction.duration",
+		"deephost.authoritative.snapshot.compiles",
+		"deephost.authoritative.snapshot.compile.duration",
+		"deephost.authoritative.snapshot.publishes",
+		"deephost.inventory.zones",
+		"deephost.inventory.records",
+		"deephost.snapshot.loaded",
+		"deephost.snapshot.ready",
+		"deephost.snapshot.age",
 	}
 	for _, name := range wantNames {
 		if findMetric(collected, name) == nil {
@@ -93,7 +95,7 @@ func TestMetricsEmitBoundedCatalogAndAttributes(t *testing.T) {
 		}
 	}
 
-	dnsMetric := findMetric(collected, "simpledns.dns.queries")
+	dnsMetric := findMetric(collected, "deephost.dns.queries")
 	dnsSum, ok := dnsMetric.Data.(metricdata.Sum[int64])
 	if !ok || len(dnsSum.DataPoints) != 1 {
 		t.Fatalf("DNS queries data = %#v", dnsMetric.Data)
@@ -102,11 +104,11 @@ func TestMetricsEmitBoundedCatalogAndAttributes(t *testing.T) {
 	assertAttribute(t, dnsSum.DataPoints[0].Attributes, "dns.question.type", "OTHER")
 	assertAttribute(t, dnsSum.DataPoints[0].Attributes, "dns.response.code", "OTHER")
 
-	assertGaugeValue(t, collected, "simpledns.inventory.zones", 2)
-	assertGaugeValue(t, collected, "simpledns.inventory.records", 17)
-	assertGaugeValue(t, collected, "simpledns.snapshot.loaded", 1)
-	assertGaugeValue(t, collected, "simpledns.snapshot.ready", 1)
-	ageMetric := findMetric(collected, "simpledns.snapshot.age")
+	assertGaugeValue(t, collected, "deephost.inventory.zones", 2)
+	assertGaugeValue(t, collected, "deephost.inventory.records", 17)
+	assertGaugeValue(t, collected, "deephost.snapshot.loaded", 1)
+	assertGaugeValue(t, collected, "deephost.snapshot.ready", 1)
+	ageMetric := findMetric(collected, "deephost.snapshot.age")
 	ageGauge, ok := ageMetric.Data.(metricdata.Gauge[float64])
 	if !ok || len(ageGauge.DataPoints) != 1 || ageGauge.DataPoints[0].Value != 10 {
 		t.Fatalf("snapshot age = %#v, want 10 seconds", ageMetric.Data)
@@ -150,4 +152,32 @@ func assertGaugeValue(t *testing.T, collected metricdata.ResourceMetrics, name s
 	if !ok || len(gauge.DataPoints) != 1 || gauge.DataPoints[0].Value != want {
 		t.Errorf("%s = %#v, want %d", name, value.Data, want)
 	}
+}
+
+// TestEveryInstrumentUsesTheProductNamespace enforces the naming contract across
+// the whole instrument set, not just the subset a given scenario happens to
+// record. The collection-based test above can only see metrics something wrote
+// to, which left nine instruments — the engine, hosting, billing and activity
+// families — unguarded while the namespace was renamed. A metric that escapes
+// the namespace is invisible until a dashboard panel silently renders empty, so
+// the contract is checked against the source of truth instead.
+func TestEveryInstrumentUsesTheProductNamespace(t *testing.T) {
+	source, err := os.ReadFile("metrics.go")
+	if err != nil {
+		t.Fatalf("read metrics.go: %v", err)
+	}
+
+	// Every instrument is constructed as meter.<Kind>("<name>", ...).
+	pattern := regexp.MustCompile(`meter\.[A-Za-z0-9]+\(\s*"([^"]+)"`)
+	matches := pattern.FindAllStringSubmatch(string(source), -1)
+	if len(matches) == 0 {
+		t.Fatal("found no instrument declarations in metrics.go; the pattern needs updating")
+	}
+
+	for _, match := range matches {
+		if name := match[1]; !strings.HasPrefix(name, "deephost.") {
+			t.Errorf("instrument %q is outside the deephost namespace; dashboards and alert rules select on that prefix", name)
+		}
+	}
+	t.Logf("checked %d instruments", len(matches))
 }

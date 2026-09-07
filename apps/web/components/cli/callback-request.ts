@@ -1,11 +1,11 @@
 /**
- * The link `simple auth login` opens, and the two answers the console posts back
+ * The link `deephost auth login` opens, and the two answers the console posts back
  * to it.
  *
  * This is not OIDC and there is no identity provider. The control plane has one
  * static operator credential, and this flow hands that credential from a browser
  * tab that is already unlocked to a CLI running on the same machine. `state` and
- * `challenge` only bind the answer to one `simple auth login` invocation; they
+ * `challenge` only bind the answer to one `deephost auth login` invocation; they
  * authenticate nobody.
  *
  * The check in `parseCallbackRequest` is the control that keeps the credential on
@@ -168,7 +168,7 @@ async function postToCallback(
     // The caught reason is deliberately dropped rather than quoted: a fetch
     // failure can name the request, and the request body holds the credential.
     throw new Error(
-      `${request.callbackUrl} didn't answer. The CLI may have stopped or timed out — run \`simple auth login\` again.`,
+      `${request.callbackUrl} didn't answer. The CLI may have stopped or timed out — run \`deephost auth login\` again.`,
     );
   }
 
@@ -176,7 +176,7 @@ async function postToCallback(
     // The CLI's own body is not read: it is an OAuth-shaped error object whose
     // description adds nothing an operator can act on here.
     throw new Error(
-      `The CLI refused this answer (HTTP ${response.status}) and stored nothing. Run \`simple auth login\` again and use the link it opens.`,
+      `The CLI refused this answer (HTTP ${response.status}) and stored nothing. Run \`deephost auth login\` again and use the link it opens.`,
     );
   }
 }

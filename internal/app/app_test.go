@@ -531,14 +531,14 @@ func TestHTTPInstrumentationRecordsAuthAudienceAndBoundedRoute(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	auth := appMetric(collected, "simpledns.http.auth.failures")
+	auth := appMetric(collected, "deephost.http.auth.failures")
 	authSum, ok := auth.Data.(metricdata.Sum[int64])
 	if !ok || len(authSum.DataPoints) != 1 {
 		t.Fatalf("auth metric = %#v", auth.Data)
 	}
 	assertAppAttribute(t, authSum.DataPoints[0].Attributes, "auth.audience", "snapshot")
 	assertAppAttribute(t, authSum.DataPoints[0].Attributes, "auth.reason", "missing")
-	httpRequests := appMetric(collected, "simpledns.http.server.requests")
+	httpRequests := appMetric(collected, "deephost.http.server.requests")
 	httpSum, ok := httpRequests.Data.(metricdata.Sum[int64])
 	if !ok || len(httpSum.DataPoints) != 1 {
 		t.Fatalf("HTTP metric = %#v", httpRequests.Data)

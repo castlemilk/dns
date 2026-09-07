@@ -30,9 +30,9 @@ import (
 //	set -a; . "$SCRATCH/stalwart-mail/mail.env"; set +a
 //	make test-integration-stalwart
 const (
-	envStalwartURL      = "SIMPLE_TEST_STALWART_URL"
-	envStalwartToken    = "SIMPLE_TEST_STALWART_TOKEN"
-	envStalwartSMTP     = "SIMPLE_TEST_STALWART_SMTP"
+	envStalwartURL      = "DEEPHOST_TEST_STALWART_URL"
+	envStalwartToken    = "DEEPHOST_TEST_STALWART_TOKEN"
+	envStalwartSMTP     = "DEEPHOST_TEST_STALWART_SMTP"
 	envStalwartHostname = "MAIL_HOSTNAME"
 )
 
@@ -539,9 +539,9 @@ func TestIntegrationMailClientAutoconfigRecords(t *testing.T) {
 // scripts/dev/stalwart-webhook.sh does (and which needs a server restart to
 // take effect — see docs/mail-runbook.md, "Delivery statistics").
 const (
-	envWebhookSecret = "SIMPLE_TEST_STALWART_WEBHOOK_SECRET"
-	envWebhookPort   = "SIMPLE_TEST_STALWART_WEBHOOK_PORT"
-	envWebhookPath   = "SIMPLE_TEST_STALWART_WEBHOOK_PATH"
+	envWebhookSecret = "DEEPHOST_TEST_STALWART_WEBHOOK_SECRET"
+	envWebhookPort   = "DEEPHOST_TEST_STALWART_WEBHOOK_PORT"
+	envWebhookPath   = "DEEPHOST_TEST_STALWART_WEBHOOK_PATH"
 )
 
 // TestIntegrationMailDeliveryEvents is the empirical half of G5: a real message

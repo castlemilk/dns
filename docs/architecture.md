@@ -2,7 +2,7 @@
 
 ## Scope
 
-Simple DNS has two surfaces in one repository:
+Deep Hosting has two surfaces in one repository:
 
 - The **data plane** answers authoritative DNS on UDP and TCP.
 - The **control plane** stores zones and exposes CRUD plus atomic BIND import/export over Connect, with a Next.js operator UI.
@@ -73,7 +73,7 @@ Malformed multi-question requests receive `FORMERR`, unsupported opcodes receive
 
 ## Influence of Cloudflare's cache work
 
-Cloudflare's [DNS cache memory optimization article](https://blog.cloudflare.com/dns-cache-memory-optimization-1111/) describes optimizations to a large **recursive resolver cache**. Simple DNS is not implementing that cache or claiming equivalent performance. The relevant design lesson is narrower: make read-side data purpose-built and immutable, remove general-purpose object overhead from the hot path where measurements justify it, and replace complete versions atomically.
+Cloudflare's [DNS cache memory optimization article](https://blog.cloudflare.com/dns-cache-memory-optimization-1111/) describes optimizations to a large **recursive resolver cache**. Deep Hosting is not implementing that cache or claiming equivalent performance. The relevant design lesson is narrower: make read-side data purpose-built and immutable, remove general-purpose object overhead from the hot path where measurements justify it, and replace complete versions atomically.
 
 v0 applies the immutability and read/write separation ideas, but still stores ordinary Go maps and `dns.RR` values. Packed owner names, exact-sized RRset storage, pre-encoded wire answers, and more compact indexing are possible later optimizations. They should be introduced only with allocation profiles, representative zone corpora, and latency/throughput benchmarks; copying a recursive-cache layout into an authoritative server without evidence would add complexity without proving value.
 

@@ -1,4 +1,4 @@
-// Package brand renders the product's identity in a terminal: the "simple"
+// Package brand renders the product's identity in a terminal: the "deephost"
 // wordmark as an ASCII/ANSI banner, and a compact one-line mark for everything
 // else.
 //
@@ -28,7 +28,11 @@ const (
 )
 
 // Wordmark is the product name, lowercase, as the banner spells it.
-const Wordmark = "simple"
+//
+// The product is "Deep Hosting" in prose; the banner spells it as one token so
+// the whole mark — rounded square, gap and wordmark — fits inside 80 columns
+// with room to spare. See TestBannerFitsEightyColumns.
+const Wordmark = "deephost"
 
 // Mode is the colour depth a writer can take.
 type Mode int
@@ -176,6 +180,10 @@ var (
 		'p': {"####", "#  #", "####", "#   ", "#   "},
 		'l': {"#", "#", "#", "#", "#"},
 		'e': {"####", "#  #", "####", "#   ", "####"},
+		'd': {"   #", "   #", "####", "#  #", "####"},
+		'h': {"#   ", "#   ", "####", "#  #", "#  #"},
+		'o': {"####", "#  #", "#  #", "#  #", "####"},
+		't': {" # ", "###", " # ", " # ", " ##"},
 	}
 )
 
@@ -241,4 +249,11 @@ func WriteBanner(w io.Writer, getenv func(string) string) error {
 func WriteMark(w io.Writer, getenv func(string) string) error {
 	_, err := io.WriteString(w, Mark(Detect(w, getenv))+"\n")
 	return err
+}
+
+// GlyphFor reports the banner shape for a letter, so a test can prove every
+// letter of the wordmark actually has one.
+func GlyphFor(letter rune) ([bannerRows]string, bool) {
+	glyph, ok := letterGlyphs[letter]
+	return glyph, ok
 }

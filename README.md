@@ -1,6 +1,9 @@
-# Simple DNS
+# Deep Hosting
 
-Simple DNS is a small authoritative DNS hosting service: a Go server for DNS over UDP and TCP, a protobuf-first Connect API, and an authenticated Next.js operator console. One control writer persists zones in bbolt; read-only authority processes consume checksum-validated snapshots and publish them atomically to the DNS query path.
+Deep Hosting is a small hosting platform for a domain you own: web hosting, email and
+authoritative DNS behind one console. A Go server answers DNS over UDP and TCP, a
+protobuf-first Connect API fronts the hosting, mail and billing engines, and an
+authenticated Next.js console drives all of it. One control writer persists zones in bbolt; read-only authority processes consume checksum-validated snapshots and publish them atomically to the DNS query path.
 
 > [!IMPORTANT]
 > This is an **authoritative-only** v0. It is not a recursive resolver, does not contact upstream resolvers, advertises `RA=0`, and returns `REFUSED` for names outside the zones it hosts. Do not configure it as a workstation or cluster recursive DNS server.
@@ -12,7 +15,7 @@ Simple DNS is a small authoritative DNS hosting service: a Go server for DNS ove
 - A bearer-authenticated Connect-Go control API generated from Buf-managed protobuf definitions
 - Atomic BIND zone-file import/export with managed provider SOA/NS records and an authenticated operator CLI
 - Connect-ES browser bindings and a Next.js 16, Tailwind CSS, and shadcn/ui operator console that keeps its token in per-tab session storage
-- A `simple` CLI covering every console operation, with a loopback browser handoff of the operator credential, and a stdio MCP server exposing the same operations as tools ([docs/cli.md](docs/cli.md), [docs/mcp.md](docs/mcp.md))
+- A `deephost` CLI covering every console operation, with a loopback browser handoff of the operator credential, and a stdio MCP server exposing the same operations as tools ([docs/cli.md](docs/cli.md), [docs/mcp.md](docs/mcp.md))
 - Transactional, single-writer bbolt persistence with an authenticated snapshot feed and atomically replaced read snapshots
 - Offline checksum verification and transactional restore tooling for snapshot archives
 - Optional engine facades for website hosting, mailboxes and billing, each independently configurable and each honest about being unconfigured
@@ -280,8 +283,8 @@ at a local engine with the Makefile targets, which is the only way they
 actually run:
 
 ```sh
-make test-integration-deephost   # SIMPLE_TEST_DEEPHOST_URL, default the local kind cluster
-make test-integration-stalwart   # SIMPLE_TEST_STALWART_URL and _TOKEN from scripts/dev/stalwart-up.sh
+make test-integration-deephost   # DEEPHOST_TEST_DEEPHOST_URL, default the local kind cluster
+make test-integration-stalwart   # DEEPHOST_TEST_STALWART_URL and _TOKEN from scripts/dev/stalwart-up.sh
 ```
 
 The same checks run in GitHub Actions. A successful CI run on `main` publishes immutable images named `ghcr.io/castlemilk/dns:sha-<commit>` and `ghcr.io/castlemilk/dns-web:sha-<commit>`.
@@ -363,8 +366,8 @@ The retained control volume and per-authority snapshot caches are useful logical
 
 ```text
 cmd/dns/                 process entry point
-cmd/simple/              the `simple` CLI: every console operation without a browser
-cmd/simple-mcp/          stdio MCP server exposing the same operations as tools
+cmd/deephost/              the `deephost` CLI: every console operation without a browser
+cmd/deephost-mcp/          stdio MCP server exposing the same operations as tools
 cmd/dnsctl/              authenticated BIND import/export and platform backup/rebuild client
 cmd/dns-restore/         offline snapshot verification and transactional restore
 cmd/vultr-dns-lb/        plan/apply reconciler for the Sydney Vultr DNS LB
@@ -378,8 +381,8 @@ internal/hosting/        DeepHost facade, deploy state machine, and workers
 internal/mail/           Stalwart facade, mail records, mailboxes, and forwarders
 internal/platform/       platform store, engine prober, backup and rebuild
 internal/secretguard/    log and value redaction for engine credentials
-internal/simplecli/      the CLI's settings file, Connect clients, and login callback
-internal/simplemcp/      the MCP tool registry, refusal contract, and handlers
+internal/deephostcli/      the CLI's settings file, Connect clients, and login callback
+internal/deephostmcp/      the MCP tool registry, refusal contract, and handlers
 internal/snapshot/       checksummed feed, consumer, freshness, and cache logic
 internal/telemetry/      bounded OpenTelemetry metrics, traces, and SDK lifecycle
 internal/zone/           validation and bbolt persistence
@@ -390,7 +393,7 @@ apps/web/                Next.js control panel and generated TS bindings
 charts/dns/              Kubernetes Helm chart
 deploy/paprika/          Paprika bootstrap manifest
 docs/architecture.md     design, operations, limitations, and roadmap
-docs/cli.md              the `simple` CLI: install, auth handoff, every command group
+docs/cli.md              the `deephost` CLI: install, auth handoff, every command group
 docs/mcp.md              the MCP server: registration, tools, confirmation, secrets
 docs/observability.md    metric contract, VKE Prometheus path, queries, and rollout
 docs/platform-runbook.md platform store backup, restore, rebuild, and secret rotation

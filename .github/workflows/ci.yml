@@ -566,7 +566,7 @@ jobs:
 
       # scripts/dev/stalwart-up.sh starts the container, bootstraps it, restarts
       # it (bootstrap mode requires that), mints an API key, and writes
-      # <dir>/mail.env with SIMPLE_TEST_STALWART_URL and _TOKEN. The key is
+      # <dir>/mail.env with DEEPHOST_TEST_STALWART_URL and _TOKEN. The key is
       # written to a mode-0600 file and never printed, so it stays out of the
       # workflow log. A `services:` container cannot express the restart, which
       # is why the container is managed by name here.
@@ -592,7 +592,7 @@ jobs:
       - name: Run the hosting integration tests
         if: ${{ inputs.deephost_url != '' }}
         env:
-          SIMPLE_TEST_DEEPHOST_URL: ${{ inputs.deephost_url }}
+          DEEPHOST_TEST_DEEPHOST_URL: ${{ inputs.deephost_url }}
         run: go test -race -count=1 -run Integration ./internal/hosting/...
 
       - name: Stop Stalwart

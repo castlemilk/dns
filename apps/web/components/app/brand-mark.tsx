@@ -25,7 +25,10 @@ export function BrandMark({ size = "md", href, className }: BrandMarkProps) {
         aria-hidden="true"
         className={cn("shrink-0 bg-primary", markSize[size])}
       />
-      <span className={cn("font-semibold", wordSize[size])}>simple</span>
+      <span className={cn("tracking-[-0.01em]", wordSize[size])}>
+        <span className="font-semibold">deep</span>
+        <span className="font-medium text-subtle"> hosting</span>
+      </span>
     </>
   );
 

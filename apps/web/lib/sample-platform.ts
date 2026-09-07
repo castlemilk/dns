@@ -103,7 +103,7 @@ export const sampleSite: Site = create(SiteSchema, {
   zoneId: "sample-zone",
   zoneName: "acme.dev",
   app: "acme-dev-1a2b3c",
-  appRef: "simple-acme-dev-1a2b3c",
+  appRef: "deep-acme-dev-1a2b3c",
   framework: Framework.NEXTJS,
   repository: "https://github.com/acme/site",
   branch: "main",
@@ -131,7 +131,7 @@ export const sampleSite: Site = create(SiteSchema, {
       retrying: false,
     },
     {
-      host: "simple-acme-dev-1a2b3c.apps.simple.host",
+      host: "deep-acme-dev-1a2b3c.apps.deephost.dev",
       role: HostnameRole.AUTO,
       state: HostnameState.ROUTES_READY,
       tlsMode: "shared",
@@ -140,7 +140,7 @@ export const sampleSite: Site = create(SiteSchema, {
       retrying: false,
     },
   ],
-  autoHostname: "simple-acme-dev-1a2b3c.apps.simple.host",
+  autoHostname: "deep-acme-dev-1a2b3c.apps.deephost.dev",
   dns: {
     inSync: true,
     apexAddresses: ["76.76.21.21"],
@@ -164,7 +164,7 @@ export const sampleMailDomain: MailDomain = create(MailDomainSchema, {
   engineDomainId: "sample-mail-domain",
   state: MailDomainState.BOUND,
   reason: "",
-  mailHostname: "mx1.simple.host",
+  mailHostname: "mx1.deephost.dev",
   dmarcPolicy: "quarantine",
   reportAddress: "dmarc@acme.dev",
   dkim: [
@@ -180,7 +180,7 @@ export const sampleMailDomain: MailDomain = create(MailDomainSchema, {
     {
       name: "@",
       type: "MX",
-      value: "10 mx1.simple.host.",
+      value: "10 mx1.deephost.dev.",
       ttl: 3600,
       recordId: "sample-mx-1",
       present: true,
@@ -189,7 +189,7 @@ export const sampleMailDomain: MailDomain = create(MailDomainSchema, {
     {
       name: "@",
       type: "TXT",
-      value: '"v=spf1 include:spf.simple.host -all"',
+      value: '"v=spf1 include:spf.deephost.dev -all"',
       ttl: 3600,
       recordId: "sample-txt-spf",
       present: true,
@@ -222,12 +222,12 @@ export const sampleMailDomain: MailDomain = create(MailDomainSchema, {
     // receiver this deployment may not have, and the frame has no way to know.
     ...(
       [
-        ["_submissions._tcp", "0 1 465 mx1.simple.host."],
-        ["_imaps._tcp", "0 1 993 mx1.simple.host."],
-        ["_pop3s._tcp", "0 1 995 mx1.simple.host."],
-        ["_jmap._tcp", "0 1 443 mx1.simple.host."],
-        ["_caldavs._tcp", "0 1 443 mx1.simple.host."],
-        ["_carddavs._tcp", "0 1 443 mx1.simple.host."],
+        ["_submissions._tcp", "0 1 465 mx1.deephost.dev."],
+        ["_imaps._tcp", "0 1 993 mx1.deephost.dev."],
+        ["_pop3s._tcp", "0 1 995 mx1.deephost.dev."],
+        ["_jmap._tcp", "0 1 443 mx1.deephost.dev."],
+        ["_caldavs._tcp", "0 1 443 mx1.deephost.dev."],
+        ["_carddavs._tcp", "0 1 443 mx1.deephost.dev."],
       ] as const
     ).map(([name, value]) => ({
       name,
@@ -241,7 +241,7 @@ export const sampleMailDomain: MailDomain = create(MailDomainSchema, {
     ...(["autoconfig", "autodiscover"] as const).map((name) => ({
       name,
       type: "CNAME",
-      value: "mx1.simple.host.",
+      value: "mx1.deephost.dev.",
       ttl: 3600,
       recordId: `sample-cname-${name}`,
       present: true,

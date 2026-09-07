@@ -22,7 +22,7 @@ const knownSpanTypes = new Map<string, string>([
   ["Render.getStaticProps", "next.get_static_props"],
   ["Render.renderDocument", "next.render.document"],
   ["ResolveMetadata.generateMetadata", "next.generate_metadata"],
-  ["SimpleDNS.serverStart", "simpledns.web.server.start"],
+  ["DeepHost.serverStart", "deephost.web.server.start"],
 ]);
 
 const sanitizedAttributes = (attributes: Attributes): Attributes => {

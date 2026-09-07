@@ -134,7 +134,7 @@ export function OperatorGate() {
 
         <div className="mt-5 text-[13px]">
           <Link href="/" className="link">
-            ← Back to simple
+            ← Back to deep hosting
           </Link>
         </div>
       </section>

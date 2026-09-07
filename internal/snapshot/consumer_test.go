@@ -246,12 +246,12 @@ func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	if err := reader.Collect(context.Background(), &collected); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	checksumMetric := snapshotMetric(collected, "simpledns.snapshot.checksum.failures")
+	checksumMetric := snapshotMetric(collected, "deephost.snapshot.checksum.failures")
 	checksumSum, ok := checksumMetric.Data.(metricdata.Sum[int64])
 	if !ok || len(checksumSum.DataPoints) != 1 || checksumSum.DataPoints[0].Value != 1 {
 		t.Fatalf("checksum failures = %#v, want 1", checksumMetric.Data)
 	}
-	compileMetric := snapshotMetric(collected, "simpledns.authoritative.snapshot.compiles")
+	compileMetric := snapshotMetric(collected, "deephost.authoritative.snapshot.compiles")
 	compileSum, ok := compileMetric.Data.(metricdata.Sum[int64])
 	if !ok || len(compileSum.DataPoints) != 1 || compileSum.DataPoints[0].Value != 1 {
 		t.Fatalf("authoritative compiles = %#v, want exactly one successful consumer compile", compileMetric.Data)
@@ -260,7 +260,7 @@ func TestConsumerRejectsInvalidSnapshotWithoutReplacingLastGood(t *testing.T) {
 	if !ok || compileOutcome.AsString() != "success" {
 		t.Errorf("authoritative compile outcome = %q, %t; want success", compileOutcome.AsString(), ok)
 	}
-	compileDurationMetric := snapshotMetric(collected, "simpledns.authoritative.snapshot.compile.duration")
+	compileDurationMetric := snapshotMetric(collected, "deephost.authoritative.snapshot.compile.duration")
 	compileDuration, ok := compileDurationMetric.Data.(metricdata.Histogram[float64])
 	if !ok || len(compileDuration.DataPoints) != 1 || compileDuration.DataPoints[0].Count != 1 {
 		t.Fatalf("authoritative compile duration = %#v, want exactly one consumer compile observation", compileDurationMetric.Data)

@@ -149,7 +149,7 @@ const child = spawn(process.execPath, [resolve(".next/standalone/server.js")], {
     OTEL_METRIC_EXPORT_INTERVAL: "60000",
     OTEL_METRIC_EXPORT_TIMEOUT: "1000",
     OTEL_SDK_DISABLED: "false",
-    OTEL_SERVICE_NAME: "simpledns-web-smoke",
+    OTEL_SERVICE_NAME: "deephost-web-smoke",
     OTEL_TRACES_EXPORTER: "otlp",
     // A deterministic ratio sampler ignores an untrusted incoming sampled bit.
     // Low/high trace IDs below exercise exported and record-only requests.
@@ -207,15 +207,15 @@ const unsampledResponse = await fetch(
 await unsampledResponse.arrayBuffer();
 
 const requiredMetrics = [
-  "simpledns.web.health.request.duration",
-  "simpledns.web.health.requests",
-  "simpledns.web.process.cpu.time",
-  "simpledns.web.process.event_loop.utilization",
-  "simpledns.web.process.memory.usage",
-  "simpledns.web.process.uptime",
-  "simpledns.web.server.request.duration",
-  "simpledns.web.server.requests",
-  "simpledns.web.server.starts",
+  "deephost.web.health.request.duration",
+  "deephost.web.health.requests",
+  "deephost.web.process.cpu.time",
+  "deephost.web.process.event_loop.utilization",
+  "deephost.web.process.memory.usage",
+  "deephost.web.process.uptime",
+  "deephost.web.server.request.duration",
+  "deephost.web.server.requests",
+  "deephost.web.server.starts",
 ];
 
 const finalResponse = await fetch(
@@ -348,15 +348,15 @@ for (const name of requiredMetrics) {
   );
 }
 const expectedMetricTypes = new Map([
-  ["simpledns.web.health.request.duration", { monotonic: false, type: "histogram" }],
-  ["simpledns.web.health.requests", { monotonic: true, type: "sum" }],
-  ["simpledns.web.process.cpu.time", { monotonic: true, type: "sum" }],
-  ["simpledns.web.process.event_loop.utilization", { monotonic: false, type: "gauge" }],
-  ["simpledns.web.process.memory.usage", { monotonic: false, type: "gauge" }],
-  ["simpledns.web.process.uptime", { monotonic: false, type: "gauge" }],
-  ["simpledns.web.server.request.duration", { monotonic: false, type: "histogram" }],
-  ["simpledns.web.server.requests", { monotonic: true, type: "sum" }],
-  ["simpledns.web.server.starts", { monotonic: true, type: "sum" }],
+  ["deephost.web.health.request.duration", { monotonic: false, type: "histogram" }],
+  ["deephost.web.health.requests", { monotonic: true, type: "sum" }],
+  ["deephost.web.process.cpu.time", { monotonic: true, type: "sum" }],
+  ["deephost.web.process.event_loop.utilization", { monotonic: false, type: "gauge" }],
+  ["deephost.web.process.memory.usage", { monotonic: false, type: "gauge" }],
+  ["deephost.web.process.uptime", { monotonic: false, type: "gauge" }],
+  ["deephost.web.server.request.duration", { monotonic: false, type: "histogram" }],
+  ["deephost.web.server.requests", { monotonic: true, type: "sum" }],
+  ["deephost.web.server.starts", { monotonic: true, type: "sum" }],
 ]);
 for (const [name, expectedType] of expectedMetricTypes) {
   assert.deepEqual(

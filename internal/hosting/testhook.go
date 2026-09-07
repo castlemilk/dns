@@ -12,7 +12,7 @@ import "os"
 // unwind it. It is inert unless the control plane is running with
 // DNS_PRODUCTION=false AND the variable is exactly "1", so it cannot fire on a
 // production control plane even if the variable leaks into its environment.
-const crashAfterCreateGitBuildEnv = "SIMPLE_TEST_CRASH_AFTER_CREATE_GIT_BUILD"
+const crashAfterCreateGitBuildEnv = "DEEPHOST_TEST_CRASH_AFTER_CREATE_GIT_BUILD"
 
 // crashAfterCreateGitBuild exits the process when the hook above is armed. It
 // returns normally in every other case, which is every real deployment.
