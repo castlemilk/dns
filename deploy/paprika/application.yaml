@@ -84,6 +84,21 @@ spec:
         existingSecret: dns-auth
         apiBearerTokenKey: api-bearer-token
         snapshotBearerTokenKey: snapshot-bearer-token
+      # The hosting engine. extraEnv deliberately cannot carry HOSTING_* — the
+      # chart schema forbids that prefix so engine configuration goes through
+      # this typed block instead, where the values are validated. The token is a
+      # Secret reference and never a literal: create dns-hosting-engine in the
+      # dns namespace with an api-token key holding a DeepHost control-plane
+      # token, exactly as the dns-auth Secret is created out of band. With
+      # enabled false the facade reports hosting as not configured and the
+      # console degrades to DNS only, which is the honest default.
+      platform:
+        hosting:
+          enabled: true
+          apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
+          gatewayHostname: apps.deephost.benebsworth.com
+          existingSecret: dns-hosting-engine
+          apiTokenKey: api-token
       control:
         # Permit zone-file imports up to the aggregate publication ceiling.
         httpMaxBodyBytes: 8388608
