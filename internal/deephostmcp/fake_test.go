@@ -96,9 +96,10 @@ func (f *fakeMail) ListMailboxes(context.Context, *connect.Request[mailv1.ListMa
 func (f *fakeMail) CreateMailbox(_ context.Context, request *connect.Request[mailv1.CreateMailboxRequest]) (*connect.Response[mailv1.CreateMailboxResponse], error) {
 	f.created = append(f.created, request.Msg)
 	return connect.NewResponse(&mailv1.CreateMailboxResponse{
-		Mailbox:  &mailv1.Mailbox{Id: "mb-1", ZoneId: request.Msg.GetZoneId(), Address: request.Msg.GetLocalPart() + "@acme.dev", LocalPart: request.Msg.GetLocalPart()},
-		Password: f.password,
-		ImapHost: "mail.acme.dev", ImapPort: 993, SmtpHost: "mail.acme.dev", SmtpPort: 465,
+		Mailbox:           &mailv1.Mailbox{Id: "mb-1", ZoneId: request.Msg.GetZoneId(), Address: request.Msg.GetLocalPart() + "@acme.dev", LocalPart: request.Msg.GetLocalPart()},
+		Password:          f.password,
+		RetrievalProtocol: "imaps", RetrievalHost: "mail.acme.dev", RetrievalPort: 993,
+		SmtpHost: "mail.acme.dev", SmtpPort: 465,
 	}), nil
 }
 

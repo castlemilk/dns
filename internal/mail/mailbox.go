@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -12,14 +13,6 @@ import (
 	"github.com/castlemilk/dns/internal/mail/stalwart"
 	"github.com/castlemilk/dns/internal/platform"
 	"google.golang.org/protobuf/types/known/timestamppb"
-)
-
-// Client connection facts the console shows once, next to the generated
-// credential. Stalwart's default listeners are implicit-TLS only (mail-facts
-// §1): 993 IMAPS and 465 submissions, with no 143 or 587.
-const (
-	imapPort = 993
-	smtpPort = 465
 )
 
 // Quota bounds. The lower bound keeps a mailbox usable; the upper one keeps a
@@ -132,13 +125,25 @@ func (s *Service) CreateMailbox(
 
 	// The response is assembled after the engine call, so the generated
 	// credential reaches exactly one place: this message.
+	// Ask the engine what it actually serves rather than assuming. A failure
+	// here must not fail mailbox creation — the account exists and its password
+	// is in this response only — so the hints degrade to the configured host.
+	hints := clientHints{SMTPHost: s.cfg.Hostname}
+	if engineDomain, domainErr := s.engine.GetDomain(ctx, doc.EngineDomainID); domainErr == nil {
+		hints = deriveClientHints(
+			parseAutoconfigRecords(engineDomain.DNSZoneFile, doc.ZoneName, s.cfg.Hostname),
+			s.cfg.Hostname,
+		)
+	}
+
 	return connect.NewResponse(&mailv1.CreateMailboxResponse{
-		Mailbox:  mailboxProto(doc, account),
-		Password: generated,
-		ImapHost: s.cfg.Hostname,
-		ImapPort: imapPort,
-		SmtpHost: s.cfg.Hostname,
-		SmtpPort: smtpPort,
+		Mailbox:           mailboxProto(doc, account),
+		Password:          generated,
+		SmtpHost:          hints.SMTPHost,
+		SmtpPort:          hints.SMTPPort,
+		RetrievalProtocol: hints.RetrievalProtocol,
+		RetrievalHost:     hints.RetrievalHost,
+		RetrievalPort:     hints.RetrievalPort,
 	}), nil
 }
 
@@ -372,4 +377,74 @@ func mailboxProto(doc platform.MailDomainDoc, account stalwart.Account) *mailv1.
 		message.CreatedAt = timestamppb.New(account.CreatedAt.UTC())
 	}
 	return message
+}
+
+// clientHints are the connection facts shown once beside a new mailbox's
+// password. They are DERIVED, never assumed: the ports used to be constants
+// (993 IMAPS, 465 submissions) taken from Stalwart's defaults, which meant a
+// deployment running an engine that speaks POP3 and no IMAP handed its users a
+// port nothing listens on. The engine states what it offers in the
+// client-autoconfiguration records of the zone file it renders, so that is what
+// we read.
+type clientHints struct {
+	RetrievalProtocol string
+	RetrievalHost     string
+	RetrievalPort     uint32
+	SMTPHost          string
+	SMTPPort          uint32
+}
+
+// retrievalPreference is the order a client should be pointed at a protocol.
+// IMAP first because it is what most clients want; POP3 only when the engine
+// advertises no IMAP. An engine offering neither yields an empty protocol, and
+// the caller says nothing rather than inventing a port.
+var retrievalPreference = []struct {
+	owner    string
+	protocol string
+}{
+	{"_imaps._tcp", "imaps"},
+	{"_pop3s._tcp", "pop3s"},
+}
+
+// deriveClientHints reads the engine's own autoconfiguration records. A record
+// this facade would not republish is not consulted, so the hints can never name
+// a service the published zone contradicts.
+func deriveClientHints(records []autoconfigRecord, fallbackHost string) clientHints {
+	hints := clientHints{SMTPHost: fallbackHost}
+
+	for _, want := range retrievalPreference {
+		host, port, ok := srvHostPort(records, want.owner)
+		if !ok {
+			continue
+		}
+		hints.RetrievalProtocol = want.protocol
+		hints.RetrievalHost = host
+		hints.RetrievalPort = port
+		break
+	}
+	if host, port, ok := srvHostPort(records, "_submissions._tcp"); ok {
+		hints.SMTPHost = host
+		hints.SMTPPort = port
+	}
+	return hints
+}
+
+// srvHostPort pulls the port and target out of an SRV value stored as
+// "priority weight port target.".
+func srvHostPort(records []autoconfigRecord, owner string) (string, uint32, bool) {
+	for _, record := range records {
+		if record.Type != "SRV" || !strings.EqualFold(record.Name, owner) {
+			continue
+		}
+		fields := strings.Fields(record.Value)
+		if len(fields) != 4 {
+			continue
+		}
+		port, err := strconv.ParseUint(fields[2], 10, 16)
+		if err != nil {
+			continue
+		}
+		return strings.TrimSuffix(fields[3], "."), uint32(port), true
+	}
+	return "", 0, false
 }

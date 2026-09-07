@@ -647,13 +647,23 @@ func cmdMailboxAdd(ctx context.Context, e *env, o *options, args []string) error
 func emitNewPassword(e *env, o *options, result *mailv1.CreateMailboxResponse) error {
 	printer := newPrinter(e, o)
 	if err := printer.emit(result, func(w io.Writer) error {
-		return fields(w,
+		lines := [][2]string{
 			pair("mailbox", result.GetMailbox().GetAddress()),
 			pair("mailbox id", result.GetMailbox().GetId()),
 			pair("password", result.GetPassword()),
-			pair("imap", fmt.Sprintf("%s:%d", result.GetImapHost(), result.GetImapPort())),
-			pair("smtp", fmt.Sprintf("%s:%d", result.GetSmtpHost(), result.GetSmtpPort())),
-		)
+		}
+		// Only name a protocol the engine actually advertises. Printing a
+		// retrieval line unconditionally is how this used to tell people to
+		// point a client at IMAP 993 on a server that only speaks POP3.
+		if protocol := result.GetRetrievalProtocol(); protocol != "" {
+			lines = append(lines, pair(protocol,
+				fmt.Sprintf("%s:%d", result.GetRetrievalHost(), result.GetRetrievalPort())))
+		}
+		if port := result.GetSmtpPort(); port != 0 {
+			lines = append(lines, pair("submission",
+				fmt.Sprintf("%s:%d", result.GetSmtpHost(), port)))
+		}
+		return fields(w, lines...)
 	}); err != nil {
 		return err
 	}
