@@ -105,7 +105,39 @@ spec:
         # records must delegate to the published node addresses, and submission
         # and POP3S need a certificate before either listener starts.
         mail:
+          # Still off — the Secret below now exists, but three things outside
+          # this cluster do not yet: MX delegation to the published node
+          # addresses, a certificate for mail.dns.benebsworth.com (without one
+          # maild disables the implicit-TLS listeners), and confirmation that
+          # Vultr permits outbound 25 from these nodes. Flip enabled to true on
+          # both this block and the mail component once those are true.
           enabled: false
+          existingSecret: dns-mail-engine
+          apiTokenKey: api-token
+        billing:
+          # Wired to a Stripe SANDBOX (test mode), created with `stripe sandbox
+          # create` so nothing touches the live Gamma Systems account. The
+          # sandbox expires 2026-09-15 unless claimed.
+          #
+          # provider is "" — billing is DISABLED — for one reason: Stripe
+          # delivers webhooks to a public HTTPS URL, and dns.benebsworth.com
+          # does not resolve publicly. The certificate exists only because
+          # cert-manager used a dns01 challenge, which never needed
+          # reachability. With billing on and webhooks undeliverable, a checkout
+          # would succeed and the subscription would never activate — a silent
+          # failure, which is exactly what the Stripe guidance warns about.
+          #
+          # To turn on: add the public A record for dns.benebsworth.com, confirm
+          # POST /billing/v1/stripe/webhook answers from the internet, then set
+          # provider to stripe. The price is a PLACEHOLDER (A$10.00/month,
+          # tagged placeholder=true in Stripe metadata) — set the real one first.
+          provider: ""
+          publicUrl: https://dns.benebsworth.com
+          customerEmail: ben.ebsworth@gmail.com
+          existingSecret: dns-billing-engine
+          secretKeyKey: stripe-secret-key
+          webhookSecretKey: stripe-webhook-secret
+          priceIdKey: stripe-price-id
         hosting:
           enabled: true
           apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
