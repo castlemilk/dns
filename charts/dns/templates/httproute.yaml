@@ -21,7 +21,16 @@ spec:
       {{- with .Values.httpRoute.parentRef.sectionName }}
       sectionName: {{ . }}
       {{- end }}
-  {{- with .Values.httpRoute.hostnames }}
+  {{- /*
+  httpRoute.hostnames when it has entries, else <domain.service>.<domain.base>.
+  Asking dns.httpRouteHostnames rather than reading the value is what lets a
+  zone move be one edit; with domain.base empty the helper hands back the value
+  verbatim, so this renders exactly as it always has. The list is only ever
+  empty when neither is set, which dns.validate refuses for an enabled route —
+  the `with` guard stays anyway so a bare `hostnames:` key can never be emitted,
+  which the Gateway API would read as "match every host".
+  */}}
+  {{- with (include "dns.httpRouteHostnames" . | fromYamlArray) }}
   hostnames:
     {{- toYaml . | nindent 4 }}
   {{- end }}

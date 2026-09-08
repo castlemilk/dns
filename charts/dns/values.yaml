@@ -6,6 +6,52 @@ imagePullSecrets: []
 revisionHistoryLimit: 3
 production: false
 
+# THE ROOT DOMAIN, IN ONE PLACE.
+#
+# Seven values name a host in the same zone: control.nameservers,
+# httpRoute.hostnames, snapshotRoute.hostname, tls.dnsNames,
+# platform.billing.publicUrl, platform.mail.hostname, and (once mail is on) the
+# certificate that last one needs. They all have to agree, and until this block
+# existed nothing checked that they did: moving to a new zone meant finding
+# every one of them and trusting none was missed. A missed one is not a render
+# error. It is a certificate issued for a name the route no longer serves, a
+# Stripe redirect to a console that has moved, or a delegation pointing at a
+# nameserver that resolves nowhere — all of which fail in production, later.
+#
+# Setting domain.base makes each of those derive from this block instead.
+# Deriving is what happens when the explicit value is EMPTY; it is never an
+# override. base: "" derives nothing at all, so a values file that spells out
+# all seven renders exactly as it did before this block existed.
+#
+# What deliberately does NOT derive: platform.hosting.gatewayHostname. That
+# names the DeepHost gateway — another system's ingress, which this chart only
+# points attached customer apexes at. It sits in this zone today by accident of
+# one operator running both, and DeepHost can live under any zone at all;
+# deriving it would mean a domain switch silently repoints every attached
+# customer apex at a host that does not exist. It stays explicit.
+domain:
+  # The zone this deployment lives under, e.g. example.com. A bare name: no
+  # scheme, no path, no leading or trailing dot, and at least one dot. "" is
+  # the default and derives nothing, which is what keeps existing values files
+  # behaving identically.
+  base: ""
+  # The label this platform occupies inside that zone. The console is
+  # <service>.<base>, the snapshot feed snapshot.<service>.<base>, mail
+  # mail.<service>.<base>, and the nameservers ns1..nsN.<service>.<base>. Two
+  # deployments can share one zone by taking different labels. It is a single
+  # DNS label, so no dots.
+  service: dns
+  # How many ns<N>.<service>.<base> names a derived delegation lists.
+  #
+  # Two, not three, because a derived nameserver name is a promise: every ns<N>
+  # needs a published A record and a node address behind it, and a delegation
+  # naming a host that resolves nowhere costs every resolver a timeout on the
+  # way to an answer. Two is the minimum this chart accepts in production and
+  # the number it has always shipped in control.nameservers. Raise it only once
+  # ns<N> resolves; the guard in dns.validate refuses a count that exceeds the
+  # published externalIPService.addresses for exactly that reason.
+  nameserverCount: 2
+
 images:
   server:
     repository: ghcr.io/castlemilk/dns
@@ -37,6 +83,13 @@ auth:
 # internal snapshot feed. The chart rejects more than one replica.
 control:
   replicaCount: 1
+  # The delegated nameserver names this zone's SOA and NS records publish.
+  #
+  # Empty derives ns1..ns<domain.nameserverCount>.<domain.service>.<domain.base>
+  # instead. These placeholders are what the chart has always shipped and they
+  # still win when they are present, so setting domain.base while leaving them
+  # here would quietly publish example.net; dns.validate refuses that pairing
+  # by name rather than letting it reach a delegation.
   nameservers:
     - ns1.example.net
     - ns2.example.net
@@ -305,6 +358,10 @@ platform:
     tenant: simple
     # Where an attached apex points. Set the hostname, the addresses, or both;
     # the resolved set is unioned with the static one.
+    #
+    # This is the one hostname the domain block above does NOT derive: it names
+    # DeepHost's ingress, not this platform's, and a domain switch must not
+    # silently repoint attached customer apexes. See the domain block for why.
     gatewayHostname: ""
     gatewayAddresses: []
     # Optional guard rails on the resolved set.
@@ -333,6 +390,8 @@ platform:
     # http://stalwart.mail.svc.cluster.local:8080. In production it must be
     # HTTPS or a cluster-local Service address: the key travels as a bearer.
     apiUrl: ""
+    # The public name of the mail host: what the MX points at and what its PTR
+    # must say. Empty derives mail.<domain.service>.<domain.base>.
     hostname: ""
     mxPriority: 10
     spfInclude: ""
@@ -359,6 +418,8 @@ platform:
     # "" disables billing. Only the real Stripe provider is deployable; the
     # in-process fake is a local-development mode the chart refuses.
     provider: ""
+    # Where Stripe sends the customer back to, and the origin its webhooks are
+    # aimed at. Empty derives https://<the console host>.
     publicUrl: ""
     customerEmail: ""
     # Existing Secret holding the Stripe credentials. The webhook key may hold
@@ -781,6 +842,9 @@ httpRoute:
     name: paprika
     namespace: envoy-gateway-system
     sectionName: https
+  # Empty derives the single console host <domain.service>.<domain.base>. When
+  # this list is set it is authoritative everywhere: the console URL and the
+  # certificate follow its first entry rather than the derived name.
   hostnames: []
   apiPathPrefix: /dns.v1.DNSService
 
@@ -794,6 +858,7 @@ snapshotRoute:
     name: paprika
     namespace: envoy-gateway-system
     sectionName: https
+  # Empty derives snapshot.<domain.service>.<domain.base>.
   hostname: ""
 
 # Optional certificate and cross-namespace grant. The shared Gateway must still
@@ -803,6 +868,11 @@ tls:
   enabled: false
   clusterIssuer: letsencrypt-prod-dns
   secretName: dns-tls
+  # Empty derives the console host plus the snapshot host — the two names this
+  # chart routes. The mail host is deliberately not among them: cert-manager
+  # fails the whole order if any one name cannot be validated, so adding
+  # mail.<...> before its records exist would take the console certificate down
+  # with it. Add that name here by hand once mail resolves.
   dnsNames: []
   referenceGrant:
     enabled: true
