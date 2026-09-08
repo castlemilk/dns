@@ -12,31 +12,37 @@ recursive checks below.
 operator -> bearer-auth Connect API -> one control pod -> bbolt retained PVC
                                                 |
                                     authenticated snapshots
+                                                |
+                                          cluster-local
+                                                |
+                        three read-only authority pods (one VKE cluster)
+                                                |
+                    ClusterIP Service publishing two node externalIPs
                                       /                   \
-                          cluster-local                    HTTPS
-                              /                               \
-             three read-only authority pods       Melbourne authority VM
-                         |                                  |
-                  Vultr DNS LB                         public IPv4/IPv6
-                         |                                  |
-             ns1.<nameserver-domain>             ns2.<nameserver-domain>
+                    ns1.<nameserver-domain>        ns2.<nameserver-domain>
 ```
 
 The authorities compile and atomically publish the same checksummed snapshot.
-Each keeps a last-known-good cache and continues answering from it if the
-control plane is temporarily unavailable. The VKE endpoint and Melbourne VM
-must not share an IP, load balancer, cluster, disk, or region.
+A running authority keeps the last checksum-valid snapshot in memory and keeps
+answering through a control-plane outage, but its on-disk cache is ephemeral in
+this deployment (`authority.cache.persistence.enabled: false`), so a restarted
+pod must reach the control plane before it can serve. Both delegated
+nameservers are node addresses of the one Sydney VKE cluster today, so this
+deployment does not yet meet the requirement that the two authority endpoints
+share no IP, load balancer, cluster, disk, or region.
 
 The public operator console is optional. The API requires a high-entropy bearer
 token in production; the snapshot feed uses a different token. Health endpoints
 remain unauthenticated. Never reuse either token for another service.
 
-The first Paprika launch uses these currently unclaimed names:
+The first Paprika launch uses these names. All but the canary child zone are
+already claimed and serving:
 
 - `deephost.benebsworth.com` — proxied operator UI and Connect API;
 - `snapshot.deephost.benebsworth.com` — unproxied, exact-path snapshot feed;
-- `ns1.deephost.benebsworth.com` — Sydney VKE load-balancer authority;
-- `ns2.deephost.benebsworth.com` — Melbourne VM authority; and
+- `ns1.deephost.benebsworth.com` — 149.28.170.95, a Sydney VKE node address;
+- `ns2.deephost.benebsworth.com` — 139.180.160.11, a second node address in the
+  same VKE cluster, not yet an independent site; and
 - `canary.benebsworth.com` — opt-in child delegation used only after direct
   authority tests pass.
 
@@ -62,7 +68,10 @@ published DNS mutation.
 - an existing Vultr SSH key ID and the operator's `/32` (and optional IPv6)
   management CIDR;
 - a remote S3-compatible state backend;
-- distinct 32-byte-or-longer API and snapshot bearer tokens; and
+- distinct 32-byte-or-longer API and snapshot bearer tokens;
+- a DeepHost control-plane API token for the hosting engine, and a live Stripe
+  restricted key, webhook signing secret, and price id for billing—
+  `DNS_PRODUCTION=true` refuses a test key; and
 - the published server and web OCI digests from the same Git revision.
 
 Provider credentials are environment variables (`CLOUDFLARE_API_TOKEN` and
@@ -131,8 +140,11 @@ kubectl config current-context
 
 It must be the intended VKE admin context, never the local kind context.
 
-Create namespace `dns` and an out-of-band Secret named by the chart. Its keys
-are `api-bearer-token` and `snapshot-bearer-token`. Render the production values
+Create namespace `dns` and the out-of-band Secrets the chart references and
+never renders: `dns-auth` with keys `api-bearer-token` and
+`snapshot-bearer-token`, `dns-hosting-engine` with `api-token`, and
+`dns-billing-engine` with `stripe-secret-key`, `stripe-webhook-secret`, and
+`stripe-price-id`. Render the production values
 locally, inspect every object, then apply `deploy/paprika/application.yaml`.
 Wait for Paprika health, the control pod, all authority pods, PVCs, Services,
 PodDisruptionBudgets, and both OpenTelemetry Collector pods. Confirm each
@@ -157,20 +169,26 @@ standalone VKE Prometheus. Do not patch its live ConfigMap; Paprika owns and
 self-heals that resource. The current platform has no Alertmanager, so visible
 firing rules are not yet a paging path.
 
-## 3. Reconcile the Sydney DNS load balancer
+## 3. Publish authoritative DNS on node addresses
 
-Use `cmd/vultr-dns-lb` in plan mode first. Its desired endpoint is one stable
-Vultr Load Balancer with these rules:
+There is no DNS load balancer. A Vultr Load Balancer cannot carry TCP/53 and
+UDP/53 at once—its API refuses a second forwarding rule on a frontend port
+already in use—and `hostPort` is forbidden by the restricted Pod Security level
+this namespace enforces. Authoritative DNS is published instead by a ClusterIP
+Service that lists node addresses in `externalIPs`:
 
-- UDP/53 to UDP/30053 on every untainted core VKE worker;
-- TCP/53 to TCP/30053 on the same workers; and
-- TCP/30053 health checks.
+- `externalIPService.enabled=true`, with one published address per delegated
+  nameserver;
+- `dnsService.enabled=false` and `nodePortService.enabled=false`; the chart
+  refuses `externalIPService` alongside either of them, so there is no NodePort
+  30053 to forward to; and
+- every published address must already route to a node of this cluster, and the
+  address count must not exceed `authority.replicaCount`.
 
-The worker instance IDs come from the live nodes' `spec.providerID`; do not copy
-an old Terraform node count. Review the exact plan, run apply, then re-run plan
-and require a no-op. Record the stable IPv4 address and verify all attached
-backends are healthy. A node-pool scale or replacement event must run the
-reconciler again.
+Confirm the rendered Service carries both port 53 protocols and every published
+address, then query each address directly. A node-pool scale or replacement
+event that retires a published address requires updating
+`externalIPService.addresses` and the matching `ns<N>` A records together.
 
 ## 4. Publish the authenticated snapshot route
 
@@ -269,6 +287,43 @@ both transports, rcodes, latency, snapshot age, SOA skew, pod/VM restarts, and
 backend health. Component telemetry does not replace the external probe: it
 cannot observe registrar delegation, the public load balancer, or resolver
 reachability from outside VKE.
+
+## Verified end to end on 2026-09-09
+
+Steps 1-7 above were exercised against the live deployment, not simulated. What
+was proven, and what deliberately was not:
+
+- **Delegation works.** `canary.benebsworth.com` was created through the Connect
+  API, delegated from the parent with `NS` records for
+  `ns1`/`ns2.deephost.benebsworth.com`, and resolved end to end through four
+  independent recursive resolvers (Cloudflare, Google, Quad9, OpenDNS). A
+  `dig +trace` completes the chain and answers from `149.28.170.95`.
+- **The delegation is insecure by design.** The parent is DNSSEC-signed, so the
+  child delegation carries `NSEC` but no `DS`. That is what this document
+  requires for an unsigned child; it is not a misconfiguration.
+- **The snapshot swap is atomic.** 200 consecutive queries spanning a live
+  record addition returned `NOERROR` without a single gap, so a zone edit never
+  blinks the zone out.
+- **New zones derive the current nameservers**, `ns1`/`ns2.deephost.benebsworth.com`.
+  A zone created before the domain move keeps the nameserver list it was created
+  with — see the caution below.
+- **The snapshot feed answers on its public name** with the bearer token, and
+  `401`s without it and with a wrong one.
+- **Billing reaches a real Stripe checkout.** A live subscription session was
+  created for A$10.00 returning to `https://deephost.benebsworth.com`. It was
+  left `unpaid` on purpose: completing it would charge a real card, so the
+  fulfilment path beyond the redirect is still unproven.
+
+Two cautions this exercise surfaced:
+
+- **A zone's nameserver list is fixed when the zone is created.** Moving
+  `domain.service` changes what new zones get; it does not rewrite existing
+  ones. Any zone created before a domain move still publishes the old names and
+  must be corrected before it is delegated, or its `NS` records will point at
+  hostnames that resolve nowhere.
+- **A newly created zone is not served instantly.** It takes a few seconds to
+  reach every authority replica, and until it does the replicas answer
+  `REFUSED`. Delegate only after querying each node address directly.
 
 ## Production-zone cutover gate
 

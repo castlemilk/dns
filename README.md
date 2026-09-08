@@ -325,7 +325,7 @@ On Go 1.27/darwin-arm64 on an Apple M5 Max, the five-run medians were 11.30 ms t
 The chart is in [`charts/dns`](charts/dns), and [`deploy/paprika/application.yaml`](deploy/paprika/application.yaml) bootstraps the restricted `dns` namespace and Paprika `Application`. Its production layout is:
 
 - one `Recreate` control Deployment with the single-writer bbolt `ReadWriteOnce` PVC and authenticated Connect/snapshot endpoints;
-- three read-only authority StatefulSet pods, each with a retained `ReadWriteOnce` snapshot-cache PVC, required hostname anti-affinity, `DoNotSchedule` topology spread, and a PodDisruptionBudget with `minAvailable: 2`; and
+- three read-only authority StatefulSet pods, each with an acknowledged ephemeral `emptyDir` snapshot cache, required hostname anti-affinity, `DoNotSchedule` topology spread, and a PodDisruptionBudget with `minAvailable: 2`; and
 - one independently deployable web Deployment; and
 - two OpenTelemetry Collector replicas receiving server-side OTLP and exposing application and self-metrics through a headless Service so Prometheus scrapes every replica.
 
@@ -334,12 +334,12 @@ Before applying the manifest:
 1. Replace the fail-closed full Git SHA placeholder and both image digest placeholders with one reviewed revision and its published server/web digests. Tags are not used for a production rollout.
 2. Make both GHCR packages public and verify anonymous pulls, or configure `imagePullSecrets`; newly published GHCR packages are private by default.
 3. Create the referenced `dns-auth` Secret out of band with distinct `api-bearer-token` and `snapshot-bearer-token` keys. The chart never renders token values; control receives both tokens and authority pods receive only the snapshot token.
-4. Confirm `vultr-block-storage-retain` exists, replace `control.nameservers` with the real authoritative names, and arrange their stable addresses and registrar/parent-zone glue.
-5. Reconcile the separately managed Vultr DNS load balancer against the current core VKE instance IDs, then keep `nodePortService.enabled=true` and the experimental `dnsService` path disabled.
+4. Confirm `vultr-block-storage-retain` exists, set `domain.base` and `domain.service` to the zone this platform answers in and leave `control.nameservers` as `[]` so the delegation derives as `ns<N>.<service>.<base>`, and arrange those names' stable addresses and registrar/parent-zone glue.
+5. Publish authoritative DNS straight onto node addresses: keep `externalIPService.enabled=true` with one address per derived nameserver name (the chart refuses a `domain.nameserverCount` larger than that list), and keep both `nodePortService` and the experimental `dnsService` path disabled — the chart enforces that only one of the three is on.
 6. Apply the source-controlled Deephost Prometheus and existing-Grafana integration described in [the observability runbook](docs/observability.md). The VKE Prometheus is not driven by the installed `ServiceMonitor`/`PrometheusRule` CRDs, so a live ConfigMap patch would be incomplete and would be reverted by Paprika.
 7. For the operator console, enable the guarded `httpRoute`; its Connect prefix targets control and `/` targets web. For remote authorities, the optional snapshot route exposes only exact path `/internal/v1/snapshot`. If the chart issues a Certificate and ReferenceGrant, the platform owner must still add that Secret as a `certificateRef` on the shared Gateway.
 
-Plan the load balancer first; only run apply after reviewing the deterministic diff. The default is one billable LB node, with odd higher counts available through `--nodes`:
+The Vultr DNS load balancer is not on the current production path; `cmd/vultr-dns-lb` remains for a deployment that publishes port 53 through a load balancer and node ports instead of node addresses. Plan first; only run apply after reviewing the deterministic diff. The default is one billable LB node, with odd higher counts available through `--nodes`:
 
 ```sh
 go run ./cmd/vultr-dns-lb --plan --instance-id='<core-vke-id-1>' --instance-id='<core-vke-id-2>' --instance-id='<core-vke-id-3>' --instance-id='<core-vke-id-4>'
@@ -356,11 +356,11 @@ kubectl apply -f deploy/paprika/application.yaml
 
 Paprika polls the pinned full Git revision, self-heals drift, and health-checks both the control Service and the authority health Service before rollback decisions. The production overlay sets snapshot staleness to `24h`; authority pods retain and continue serving their last checksum-valid snapshot through a shorter control outage, while readiness fails after the configured freshness window.
 
-The UI's bearer token is still required through the HTTPRoute; the route is transport, not authentication. The snapshot feed uses a distinct bearer token. Health endpoints remain unauthenticated. No NetworkPolicy is rendered until the exact Paprika, Gateway, and Vultr load-balancer sources can be safely selected.
+The UI's bearer token is still required through the HTTPRoute; the route is transport, not authentication. The snapshot feed uses a distinct bearer token. Health endpoints remain unauthenticated. The only NetworkPolicy rendered is the collector's, restricting OTLP ingress to this release's own pods and the metrics port to the monitoring namespace; none is rendered for control, authority, or web until the exact Paprika, Gateway, and node-address sources can be safely selected.
 
 The three VKE authority pods improve pod and worker availability but still share one cluster, region, and public load balancer. Follow the [production launch and cutover runbook](docs/production-launch.md) to add and validate an independently operated authority before delegating a production zone.
 
-The retained control volume and per-authority snapshot caches are useful logical recovery copies. They are not an automated, off-provider archival backup: use a separately managed, verified snapshot archive or bbolt-consistent copy outside the cluster's failure domain.
+The retained control volume is a useful logical recovery copy. The per-authority snapshot caches are `emptyDir` and are lost with the pod. Neither is an automated, off-provider archival backup: use a separately managed, verified snapshot archive or bbolt-consistent copy outside the cluster's failure domain.
 
 ## Repository map
 

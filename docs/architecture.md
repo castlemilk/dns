@@ -2,10 +2,11 @@
 
 ## Scope
 
-Deep Hosting has two surfaces in one repository:
+Deep Hosting has three surfaces in one repository:
 
 - The **data plane** answers authoritative DNS on UDP and TCP.
-- The **control plane** stores zones and exposes CRUD plus atomic BIND import/export over Connect, with a Next.js operator UI.
+- The **control plane** stores zones and exposes CRUD plus atomic BIND import/export over Connect, and mounts the platform engine facades — hosting (DeepHost), billing (Stripe), mail, and activity — on the same handler.
+- The **web app** serves the public landing page at `/` and the operator console beneath it, both on the single console host.
 
 The server is authoritative-only. It never walks the DNS hierarchy, forwards a question, or fills a recursive cache. Queries below a hosted zone are answered with `AA=1` where appropriate; recursion is never advertised (`RA=0`). Names outside every hosted zone receive `REFUSED`. This boundary keeps v0 small and prevents it from accidentally becoming an open recursive resolver.
 
@@ -17,9 +18,9 @@ operator browser ── / ───────────────> Next.js
                                                 └── authenticated, checksummed snapshot
                                                                       │
                                   data plane                          ▼
-recursive resolvers ──Vultr LB, UDP/TCP 53──> read-only authority replicas
+recursive resolvers ──node IPs, UDP/TCP 53──> read-only authority replicas
                                                    │
-                                                   └── atomic pointer + cache PVC
+                                                   └── atomic pointer + emptyDir cache
 ```
 
 The production chart runs three distinct workloads: one `DNS_ROLE=control` Deployment, a three-pod `DNS_ROLE=authority` StatefulSet, and the web Deployment. Control owns the only bbolt writer and does not open DNS listeners. Authorities do not open bbolt or expose the Connect API; they poll the authenticated snapshot feed and serve immutable compiled snapshots. `DNS_ROLE=all` keeps the original combined process for local development, where a mutation is published directly to its co-located DNS handler.
@@ -97,12 +98,12 @@ The heap metric is runtime-observed and showed run-to-run noise, especially whil
 
 ## API, authentication, and frontend
 
-[`proto/dns/v1/dns.proto`](../proto/dns/v1/dns.proto) defines the API. Buf generates:
+[`proto/dns/v1/dns.proto`](../proto/dns/v1/dns.proto) defines the DNS API; `proto/platform/v1`, `proto/hosting/v1`, `proto/billing/v1`, `proto/mail/v1`, and `proto/activity/v1` define the platform services mounted alongside it. Buf generates:
 
 - protobuf Go messages and Connect-Go handler/client interfaces under `gen/go`; and
 - protobuf-es message and service descriptors under `apps/web/gen` for Connect-ES.
 
-The API exposes `ListZones`, `CreateZone`, `DeleteZone`, `CreateRecord`, `UpdateRecord`, `DeleteRecord`, `ImportZone`, and `ExportZone`. Connect supports its JSON-over-HTTP protocol as well as gRPC and gRPC-Web on the same handlers. The frontend and `dnsctl` call the generated service instead of maintaining hand-written request types.
+The DNS service exposes `ListZones`, `CreateZone`, `DeleteZone`, `CreateRecord`, `UpdateRecord`, `DeleteRecord`, `ImportZone`, and `ExportZone`; the platform, hosting, billing, mail, and activity services are mounted on the same control handler behind the same API bearer token. Connect supports its JSON-over-HTTP protocol as well as gRPC and gRPC-Web on the same handlers. The frontend and `dnsctl` call the generated service instead of maintaining hand-written request types.
 
 `ImportZone` parses a bounded BIND file for the unsigned record types supported by the server. Source apex SOA and NS records are skipped with warnings because the store creates managed apex records from `DNS_NAMESERVERS`; any unsupported or invalid record rejects the complete create/replace transaction. Dry-run uses the same mode preconditions, validation, and aggregate snapshot admission, then deliberately rolls back. `ExportZone` emits deterministic canonical BIND text including the managed records. The operator interfaces are:
 
@@ -132,23 +133,23 @@ The authority freshness probe does not verify public DNS reachability or erase a
 The production Helm chart deploys:
 
 - one `Recreate` control Deployment with a single-writer bbolt `ReadWriteOnce` PVC;
-- three read-only authority StatefulSet pods with one retained `ReadWriteOnce` snapshot-cache PVC per pod;
+- three read-only authority StatefulSet pods with an ephemeral `emptyDir` snapshot cache per pod;
 - one independently deployable Next.js web Deployment;
-- an authority-only mixed-protocol NodePort Service for the separately managed public DNS load balancer;
+- an authority-only mixed-protocol `externalIPs` Service that publishes UDP/TCP 53 on the delegated node addresses;
 - experimental shared-Vultr public DNS LoadBalancer Services; and
 - separate optional Gateway API routes for the operator surface and remote snapshot consumers.
 
-The control claim carries `helm.sh/resource-policy: keep` and `paprika.io/prune: "false"`; the production overlay selects a retaining Vultr storage class. The StatefulSet retains cache claims when pods are scaled or deleted. Retention limits accidental deletion, but neither kind of retained volume is an off-provider backup.
+The control claim carries `helm.sh/resource-policy: keep` and `paprika.io/prune: "false"`; the production overlay selects a retaining Vultr storage class. Authority snapshot caches are ephemeral `emptyDir` volumes in production: the Vultr account is at its block-storage subscription cap, and `authority.cache.acknowledgeEphemeralCache` is the explicit opt-in. Retention limits accidental deletion of the control volume, but a retained volume is not an off-provider backup.
 
 The authority StatefulSet uses required hostname anti-affinity and a `DoNotSchedule` topology-spread constraint. A PodDisruptionBudget sets `minAvailable: 2`. Those controls require enough schedulable workers and improve pod/node availability, but the replicas still share the same VKE cluster and Sydney region.
 
-The operator `HTTPRoute` sends the configured Connect prefix to control and `/` to the web Service. It deliberately does not expose the snapshot endpoint. A second, optional route exposes only exact path `/internal/v1/snapshot` to control for remote authorities. The chart can render a Certificate and cross-namespace ReferenceGrant, but the platform owner must still add the resulting TLS Secret as a `certificateRef` on the shared Gateway. DNS itself does not traverse either HTTP route.
+The operator `HTTPRoute` sends the DNS and platform Connect prefixes and the exact Stripe webhook path `/billing/v1/stripe/webhook` to control, and `/` to the web Service. It deliberately does not expose the snapshot endpoint. A second, optional route exposes only exact path `/internal/v1/snapshot` to control for remote authorities. The chart can render a Certificate and cross-namespace ReferenceGrant, but the platform owner must still add the resulting TLS Secret as a `certificateRef` on the shared Gateway. DNS itself does not traverse either HTTP route.
 
 No NetworkPolicy is rendered yet. Live Paprika probes, Gateway traffic, and the provider load balancer originate from different sources that the chart cannot safely infer; deny-by-default policy should be introduced only after those selectors and CIDRs are known and canaried.
 
 ### Vultr UDP/TCP load balancer
 
-The preferred public path is the CCM-unmanaged NodePort Service. It selects only authority pods and fixes both protocols at node port `30053`, with `externalTrafficPolicy: Cluster` so an attached worker can forward to a ready authority. The declarative reconciler in [`cmd/vultr-dns-lb`](../cmd/vultr-dns-lb/README.md) discovers one exact-label Sydney load balancer, fails closed on duplicates, and manages:
+The public path in production is the CCM-unmanaged `externalIPs` Service. It selects only authority pods and publishes UDP/53 and TCP/53 straight onto the delegated node addresses, because a Vultr load balancer refuses a second forwarding rule on a frontend port already in use and so cannot carry both protocols on one address. The NodePort Service and the reconciler below are the alternative path and are disabled today (`nodePortService.enabled: false`); enabling them fixes both protocols at node port `30053`, with `externalTrafficPolicy: Cluster` so an attached worker can forward to a ready authority. The declarative reconciler in [`cmd/vultr-dns-lb`](../cmd/vultr-dns-lb/README.md) discovers one exact-label Sydney load balancer, fails closed on duplicates, and manages:
 
 - UDP/53 → UDP/30053;
 - TCP/53 → TCP/30053;
@@ -216,7 +217,7 @@ For each production rollout:
 4. Delegate a test zone first and inspect it through multiple public recursive resolvers before moving important zones.
 5. Monitor authoritative answers, SOA serials, delegation consistency, SERVFAIL rates, latency, snapshot freshness, and certificate/authentication state for the control surfaces.
 
-The three charted authority pods are not three independent sites: they share one VKE cluster, region, and public load balancer. The production launch design adds a separately operated Melbourne authority that consumes the narrow authenticated snapshot feed. See [`docs/production-launch.md`](production-launch.md) for the rollout and cutover gates.
+The three charted authority pods are not three independent sites: they share one VKE cluster, region, and set of node addresses. The production launch design adds a separately operated Melbourne authority that consumes the narrow authenticated snapshot feed. See [`docs/production-launch.md`](production-launch.md) for the rollout and cutover gates.
 
 ## Failure behavior and operations
 
@@ -225,7 +226,7 @@ The three charted authority pods are not three independent sites: they share one
 - Snapshot polling is eventually consistent and has no acknowledgement path. A checksum, compile, cache-write, authentication, network, or freshness failure leaves each authority on its previous valid snapshot.
 - A stale authority continues answering from that immutable snapshot, but Kubernetes readiness fails and removes it from ready backends after the configured window.
 - `Recreate` avoids concurrent bbolt ownership. A short control rollout does not directly interrupt authority DNS; it only prevents refresh until control returns.
-- The retained control PVC protects against an ordinary Pod replacement. Authority cache PVCs are useful logical recovery copies of the last valid zone snapshot. All remain provider- and region-correlated, so they do not replace a separately managed verified snapshot archive or bbolt-consistent copy outside the cluster's failure domain.
+- The retained control PVC protects against an ordinary Pod replacement. Authority snapshot caches are ephemeral, so a restarted authority holds no local recovery copy and serves nothing until it reaches control. The control volume remains provider- and region-correlated, so it does not replace a separately managed verified snapshot archive or bbolt-consistent copy outside the cluster's failure domain.
 - In-process query counters reset on restart. OpenTelemetry counters are also process-lifetime cumulative values, but Prometheus preserves their samples and handles resets across pod restarts.
 
 ### Snapshot verification and restore
@@ -255,7 +256,7 @@ For disaster recovery where resolvers must observe a newer SOA, add `--bump-seri
 - No recursive resolution or recursive cache by design
 - One bbolt control writer; snapshot pull is not a replicated journal, consensus system, or multi-writer control plane
 - Full-dataset admission and changed-snapshot generation/compilation rather than incremental publication
-- Authority cache PVCs are logical recovery copies, not durable off-provider archival backups
+- Authority snapshot caches are ephemeral `emptyDir` volumes; there is no durable off-provider archival backup
 - ASCII DNS names only; callers must provide IDNs as punycode
 - A focused record set rather than the full DNS RR type registry
 - Prometheus metrics and span-derived request metrics, but no retained trace backend, Alertmanager notification delivery, formal SLO/error-budget policy, or end-to-end public DNS health proof
