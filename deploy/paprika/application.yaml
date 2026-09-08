@@ -158,34 +158,29 @@ spec:
           existingSecret: dns-mail-engine
           apiTokenKey: api-token
         billing:
-          # The secret below holds a Stripe SANDBOX key (test mode), created
-          # with `stripe sandbox create` so nothing touches the live Gamma
-          # Systems account. The sandbox expires 2026-09-15 unless claimed. It
-          # is useful for a non-production deployment; it cannot be used here.
+          # The Secret named below holds the LIVE Stripe credentials: a
+          # restricted key, the signing secret for the endpoint at
+          # /billing/v1/stripe/webhook, and the price id. They are never in
+          # git — only the key names are.
           #
-          # provider is "" — billing is DISABLED — and a sandbox key cannot
-          # change that. This deployment runs DNS_PRODUCTION=true, and the
-          # control plane refuses a test key in production
-          # (internal/config/engines.go): a sandbox moves no money, so billing
-          # real customers against it would take payment that never arrives.
-          # Turning this on needs a LIVE restricted key from the real account,
-          # not the sandbox below.
+          # LIVE. Every precondition this comment used to list is now met, and
+          # each was checked rather than assumed:
           #
-          # Two things must also be true first, independent of the key:
-          #
-          #  1. Stripe delivers webhooks to a public HTTPS URL, and
-          #     deephost.benebsworth.com must answer from the internet. The
-          #     certificate is not evidence of that — cert-manager used a dns01
-          #     challenge, which never needed reachability. With billing on and
-          #     webhooks undeliverable a checkout succeeds and the subscription
-          #     never activates: a silent failure, exactly what the Stripe
-          #     guidance warns about.
-          #  2. The price is a PLACEHOLDER (A$10.00/month, tagged
-          #     placeholder=true in Stripe metadata). Set the real one first.
-          #
-          # Enabling this without (1) and (2) charges people incorrectly, so it
-          # is a deliberate decision, not a config toggle.
-          provider: ""
+          #  1. The key in dns-billing-engine is a LIVE restricted key
+          #     (rk_live_). The control plane refuses a test key while
+          #     DNS_PRODUCTION=true, which is why the sandbox could never be
+          #     used here — a sandbox moves no money.
+          #  2. deephost.benebsworth.com answers publicly, so Stripe can
+          #     actually deliver. A ready certificate was never evidence of
+          #     this: cert-manager uses a dns01 challenge, which needs no
+          #     reachability.
+          #  3. The price is real, not the old placeholder: A$10.00/month
+          #     recurring, live, created against this account.
+          #  4. The webhook endpoint subscribes to every event the facade acts
+          #     on — checkout.session.completed above all. Without that one a
+          #     customer pays and the subscription never activates, which is
+          #     the silent failure the Stripe guidance warns about.
+          provider: stripe
           # Empty derives https://<the console host>, https://deephost.benebsworth.com
           # today. This is the origin Stripe returns a customer to and the one
           # its webhooks are posted at, so it has to be the same host the
@@ -202,10 +197,7 @@ spec:
           webhookRoute:
             # Stripe posts the raw path, not a Connect RPC path, so it needs its
             # own rule — without it the POST lands on the console and 404s.
-            # Off while provider is "": the chart refuses the pair, because a
-            # webhook route with no billing engine behind it is a public
-            # endpoint that accepts Stripe POSTs and does nothing with them.
-            enabled: false
+            enabled: true
         hosting:
           enabled: true
           apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
