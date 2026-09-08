@@ -63,7 +63,7 @@ Engines:
   hosting: not configured (the console shows the missing variable names)
 {{- end }}
 {{- if .Values.platform.mail.enabled }}
-  mail:    enabled, hostname {{ .Values.platform.mail.hostname }}, API key from Secret/{{ .Values.platform.mail.existingSecret }} key {{ .Values.platform.mail.apiTokenKey }}
+  mail:    enabled, hostname {{ include "dns.mailHost" . }}, API key from Secret/{{ .Values.platform.mail.existingSecret }} key {{ .Values.platform.mail.apiTokenKey }}
 {{- else }}
   mail:    not configured (the console shows the missing variable names)
 {{- end }}
@@ -99,7 +99,7 @@ Rotating the signing secret without downtime:
 
 {{- if .Values.snapshotRoute.enabled }}
 The separate snapshot route exposes only the exact /internal/v1/snapshot path at
-https://{{ .Values.snapshotRoute.hostname }}. Remote authorities must send the
+https://{{ include "dns.snapshotHost" . }}. Remote authorities must send the
 snapshot bearer token.
 {{- else }}
 The remote snapshot HTTPRoute is disabled; in-cluster authorities poll the

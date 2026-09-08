@@ -5,6 +5,7 @@
   "required": [
     "revisionHistoryLimit",
     "production",
+    "domain",
     "images",
     "auth",
     "control",
@@ -55,6 +56,9 @@
     },
     "production": {
       "type": "boolean"
+    },
+    "domain": {
+      "$ref": "#/definitions/domain"
     },
     "images": {
       "type": "object",
@@ -138,6 +142,32 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "domain": {
+      "type": "object",
+      "required": [
+        "base",
+        "service",
+        "nameserverCount"
+      ],
+      "properties": {
+        "base": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$"
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$"
+        },
+        "nameserverCount": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "image": {
       "type": "object",
       "required": [
@@ -325,7 +355,7 @@
             },
             "nameservers": {
               "type": "array",
-              "minItems": 2,
+              "minItems": 0,
               "uniqueItems": true,
               "items": {
                 "type": "string",

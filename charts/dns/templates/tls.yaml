@@ -8,8 +8,19 @@ metadata:
     {{- include "dns.labels" (dict "root" . "component" "tls") | nindent 4 }}
 spec:
   secretName: {{ .Values.tls.secretName }}
+  {{- /*
+  tls.dnsNames when it has entries, else the console hostnames plus the
+  snapshot host once domain.base is set — the same two answers this
+  certificate has always been given by hand, now derived from one value. The
+  helper already emits a YAML sequence, so this is byte-for-byte what
+  `toYaml .Values.tls.dnsNames` produced while domain.base is empty.
+
+  Note what is NOT here: the mail host. cert-manager fails the whole Order if
+  any single name in it will not validate, so an unresolvable mail name would
+  take the console certificate down with it.
+  */}}
   dnsNames:
-    {{- toYaml .Values.tls.dnsNames | nindent 4 }}
+    {{- include "dns.tlsDNSNames" . | nindent 4 }}
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer

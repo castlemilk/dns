@@ -73,8 +73,21 @@ spec:
               value: ":8080"
             - name: DNS_DATA_PATH
               value: "/data/dns.db"
+            {{- /*
+            The names this zone is delegated to, which the control plane writes
+            into every zone's NS records and SOA MNAME. Sourced from
+            dns.nameservers: control.nameservers when it lists entries, else
+            ns1..ns<domain.nameserverCount>.<domain.service>.<domain.base>.
+            Still a comma-joined string either way, and still exactly the
+            explicit list while domain.base is empty. dns.validate refuses an
+            effectively empty list, so this value is never "".
+
+            A template comment, not a "#" one: an env var's rendered bytes are
+            compared against the running Deployment, and a comment here would
+            be a spurious diff for every operator on the old chart.
+            */}}
             - name: DNS_NAMESERVERS
-              value: {{ join "," .Values.control.nameservers | quote }}
+              value: {{ join "," (include "dns.nameservers" . | fromYamlArray) | quote }}
             - name: DNS_HTTP_MAX_BODY_BYTES
               value: {{ printf "%d" (int64 .Values.control.httpMaxBodyBytes) | quote }}
             - name: DNS_SNAPSHOT_MAX_BODY_BYTES

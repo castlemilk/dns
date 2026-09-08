@@ -17,8 +17,15 @@ spec:
       name: {{ .Values.snapshotRoute.parentRef.name }}
       namespace: {{ .Values.snapshotRoute.parentRef.namespace }}
       sectionName: {{ .Values.snapshotRoute.parentRef.sectionName }}
+  {{- /*
+  snapshotRoute.hostname when set, else snapshot.<domain.service>.<domain.base>.
+  Exactly one name, as before: this route carries one authenticated path for
+  remote authority fleets and nothing else, and a second hostname on it would
+  be a second way in. dns.validate refuses an enabled route with no name, so
+  the helper is never empty here.
+  */}}
   hostnames:
-    - {{ .Values.snapshotRoute.hostname | quote }}
+    - {{ include "dns.snapshotHost" . | quote }}
   rules:
     - matches:
         - path:

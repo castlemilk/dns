@@ -117,6 +117,186 @@ place.
 {{- end }}
 
 {{/*
+--- PUBLIC HOSTNAMES, DERIVED FROM ONE ZONE -----------------------------------
+
+Six values used to name a host in the same zone independently of each other.
+The helpers below are the single answer to each of those questions, and every
+template asks them rather than reading the value directly, so a zone move is
+one edit to domain.base instead of six that must agree.
+
+Two rules hold for all of them, and nothing else is worth remembering:
+
+  1. THE EXPLICIT VALUE WINS. If httpRoute.hostnames, snapshotRoute.hostname,
+     tls.dnsNames, control.nameservers, platform.billing.publicUrl or
+     platform.mail.hostname is set, that is the answer, domain.base or not.
+     Deriving fills an empty value; it never overrides a set one.
+  2. NOTHING DERIVES WITHOUT domain.base. With base empty every helper returns
+     the explicit value verbatim — including an empty one, which the guards in
+     dns.validate then reject with the same message they always did. That is
+     what makes this block a no-op for a values file that spells out all six,
+     and it is why the helpers never cross-derive one explicit value from
+     another: an empty publicUrl with an explicit httpRoute.hostnames still
+     fails loudly rather than quietly picking a host.
+
+Helpers returning a list emit a YAML sequence; read one back with
+`include "dns.x" . | fromYamlArray`, as httproute.yaml already does for
+dns.apiPathPrefixes. Every helper is safe with base empty: it short-circuits
+rather than printing a stem-less name like ".example.com" or "dns.".
+*/}}
+
+{{/*
+The zone every derived name hangs off, or "" when this deployment is
+configured with explicit hostnames. Internal: it exists so the "is anything
+derived at all" test is written once. A trailing dot is trimmed even though
+dns.validate rejects one, because this value is concatenated, not compared.
+*/}}
+{{- define "dns.domainBase" -}}
+{{- trimSuffix "." (.Values.domain.base | default "") -}}
+{{- end }}
+
+{{/*
+<service>.<base> — the stem this platform's names share — or "" when
+domain.base is empty. Internal. domain.service is schema-required and
+non-empty, and dns.validate rejects a base with a scheme, a path or a leading
+or trailing dot, so this printf cannot produce a malformed stem.
+*/}}
+{{- define "dns.platformDomain" -}}
+{{- $base := include "dns.domainBase" . -}}
+{{- if $base -}}
+{{- printf "%s.%s" .Values.domain.service $base -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The public host the console and the Connect API answer on: the first
+httpRoute.hostnames entry, else <service>.<base>, else "".
+
+The first entry rather than the whole list because a certificate and a Stripe
+redirect each need exactly one origin, and the route's first hostname is the
+one an operator who listed several meant as canonical.
+*/}}
+{{- define "dns.platformHost" -}}
+{{- if .Values.httpRoute.hostnames -}}
+{{- first .Values.httpRoute.hostnames -}}
+{{- else -}}
+{{- include "dns.platformDomain" . -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Every hostname the console HTTPRoute claims, as a YAML list: httpRoute.hostnames
+when set, else the single derived console host, else empty. Empty is a valid
+answer here — the route is off by default — and dns.validate is what refuses it
+when httpRoute.enabled is true.
+*/}}
+{{- define "dns.httpRouteHostnames" -}}
+{{- if .Values.httpRoute.hostnames -}}
+{{- toYaml .Values.httpRoute.hostnames -}}
+{{- else -}}
+{{- toYaml (compact (list (include "dns.platformDomain" .))) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The host carrying the authenticated snapshot feed for remote authority fleets:
+snapshotRoute.hostname when set, else snapshot.<service>.<base>, else "".
+
+It is a separate name from the console host on purpose — the snapshot route
+exposes one exact path and no Connect procedure, and keeping it off the console
+hostname keeps that separation visible in the certificate.
+*/}}
+{{- define "dns.snapshotHost" -}}
+{{- if .Values.snapshotRoute.hostname -}}
+{{- .Values.snapshotRoute.hostname -}}
+{{- else -}}
+{{- $stem := include "dns.platformDomain" . -}}
+{{- if $stem -}}
+{{- printf "snapshot.%s" $stem -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The public name of the mail host — what the MX points at and what its PTR must
+say: platform.mail.hostname when set, else mail.<service>.<base>, else "".
+*/}}
+{{- define "dns.mailHost" -}}
+{{- if .Values.platform.mail.hostname -}}
+{{- .Values.platform.mail.hostname -}}
+{{- else -}}
+{{- $stem := include "dns.platformDomain" . -}}
+{{- if $stem -}}
+{{- printf "mail.%s" $stem -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The delegated nameserver names, as a YAML list: control.nameservers when it has
+entries, else ns1..ns<domain.nameserverCount>.<service>.<base>, else empty.
+
+The shipped control.nameservers placeholders are entries, so they win — which
+is a trap for anyone who sets domain.base and forgets to clear them, and
+dns.validate refuses that exact pairing by name rather than letting example.net
+reach an NS record.
+*/}}
+{{- define "dns.nameservers" -}}
+{{- if .Values.control.nameservers -}}
+{{- toYaml .Values.control.nameservers -}}
+{{- else -}}
+{{- $stem := include "dns.platformDomain" . -}}
+{{- $names := list -}}
+{{- if $stem -}}
+{{- range $index := until (int .Values.domain.nameserverCount) -}}
+{{- $names = append $names (printf "ns%d.%s" (add1 $index) $stem) -}}
+{{- end -}}
+{{- end -}}
+{{- toYaml $names -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The absolute origin the console is reached at, used for Stripe's return URL and
+as the origin its webhooks are aimed at: platform.billing.publicUrl when set,
+else https://<console host> once domain.base is set, else "".
+
+https, never http, and never a port: the derived form is only ever the public
+edge, which terminates TLS at the Gateway. An operator who needs anything else
+sets publicUrl.
+*/}}
+{{- define "dns.consoleURL" -}}
+{{- if .Values.platform.billing.publicUrl -}}
+{{- .Values.platform.billing.publicUrl -}}
+{{- else -}}
+{{- $host := include "dns.platformHost" . -}}
+{{- if and $host (include "dns.domainBase" .) -}}
+{{- printf "https://%s" $host -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The names the certificate covers, as a YAML list: tls.dnsNames when set, else
+the console hostnames plus the snapshot host, deduplicated, else empty.
+
+The mail host is deliberately absent. cert-manager fails an entire Order when
+any one name in it cannot be validated, so folding mail.<...> in before its A
+record and MX exist would take the console certificate down with it — a much
+worse failure than a mail server without TLS. values.yaml says to add that name
+by hand once it resolves.
+*/}}
+{{- define "dns.tlsDNSNames" -}}
+{{- if .Values.tls.dnsNames -}}
+{{- toYaml .Values.tls.dnsNames -}}
+{{- else if (include "dns.domainBase" .) -}}
+{{- $names := concat (include "dns.httpRouteHostnames" . | fromYamlArray) (compact (list (include "dns.snapshotHost" .))) -}}
+{{- toYaml (uniq $names) -}}
+{{- else -}}
+{{- toYaml (list) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Platform state and engine environment for the control container. Engine
 credentials are always secretKeyRef; every other value is a plain setting an
 operator may read. A disabled engine renders nothing at all, because the
@@ -183,7 +363,7 @@ refuses to start.
       name: {{ $platform.mail.existingSecret }}
       key: {{ $platform.mail.apiTokenKey }}
 - name: MAIL_HOSTNAME
-  value: {{ $platform.mail.hostname | quote }}
+  value: {{ include "dns.mailHost" $ | quote }}
 - name: MAIL_MX_PRIORITY
   value: {{ printf "%d" (int64 $platform.mail.mxPriority) | quote }}
 {{- with $platform.mail.spfInclude }}
@@ -219,7 +399,7 @@ refuses to start.
 - name: BILLING_PROVIDER
   value: {{ $platform.billing.provider | quote }}
 - name: BILLING_PUBLIC_URL
-  value: {{ $platform.billing.publicUrl | quote }}
+  value: {{ include "dns.consoleURL" $ | quote }}
 - name: BILLING_CUSTOMER_EMAIL
   value: {{ $platform.billing.customerEmail | quote }}
 - name: STRIPE_SECRET_KEY
@@ -359,6 +539,19 @@ that runs in a production render. Expects field and url.
 {{- end -}}
 {{- end }}
 
+{{/*
+"true" when a hostname is a shipped placeholder or a name reserved by RFC 2606
+and RFC 6761, "" otherwise. Extracted so the production nameserver scan and the
+domain.base pairing guard below apply one list rather than two that drift.
+Expects host.
+*/}}
+{{- define "dns.reservedHostname" -}}
+{{- $name := trimSuffix "." (lower .host) -}}
+{{- if or (contains "replace" $name) (eq $name "example.com") (hasSuffix ".example.com" $name) (eq $name "example.net") (hasSuffix ".example.net" $name) (eq $name "example.org") (hasSuffix ".example.org" $name) (eq $name "invalid") (hasSuffix ".invalid" $name) (eq $name "localhost") (hasSuffix ".localhost" $name) (eq $name "test") (hasSuffix ".test" $name) -}}
+true
+{{- end -}}
+{{- end }}
+
 {{/* Fail closed on topology values that would violate the runtime contract. */}}
 {{- define "dns.validate" -}}
 {{- include "dns.validateExtraEnv" (dict "component" "control" "entries" .Values.control.extraEnv) -}}
@@ -367,6 +560,69 @@ that runs in a production render. Expects field and url.
 {{- include "dns.rejectExtraEnvFrom" (dict "component" "control" "entries" .Values.control.extraEnvFrom) -}}
 {{- include "dns.rejectExtraEnvFrom" (dict "component" "authority" "entries" .Values.authority.extraEnvFrom) -}}
 {{- include "dns.rejectExtraEnvFrom" (dict "component" "web" "entries" .Values.web.extraEnvFrom) -}}
+{{/*
+domain.base is the root six public hostnames now hang off, so a malformed one
+is not one render error, it is six wrong names — and a wrong name fails at
+delegation or certificate issuance days later, never here. Reject the shapes
+that would concatenate into something that still looks plausible: a scheme or
+path (https://example.com renders "dns.https://example.com"), a leading or
+trailing dot ("dns..example.com"), a single label with no dot (a delegated zone
+always has one), and anything outside the letter-digit-hyphen alphabet.
+
+The schema carries the same shape as a pattern and rejects it first. This
+restates it because a pattern mismatch says only that a regex did not match,
+and because this is the layer that still runs under --skip-schema-validation.
+The bounds on nameserverCount are the other way round — guard only — because
+they are meaningful only when something derives from them: with base empty the
+value is unused, and failing a render over an unused number is noise.
+*/}}
+{{- $domain := .Values.domain -}}
+{{- if $domain.base -}}
+{{- if not (regexMatch `^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$` $domain.base) -}}
+{{- fail (printf "domain.base %q must be a bare domain name such as example.com: no scheme, no path, no leading or trailing dot, at least one dot, and only letters, digits and hyphens" $domain.base) -}}
+{{- end -}}
+{{- if not (regexMatch `^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$` $domain.service) -}}
+{{- fail (printf "domain.service %q must be a single DNS label such as dns: it is prefixed to domain.base, so it carries no dots and no empty labels" $domain.service) -}}
+{{- end -}}
+{{- if lt (int $domain.nameserverCount) 2 -}}
+{{- fail (printf "domain.nameserverCount is %d; a zone delegated to fewer than two nameservers has no redundancy, and this chart already refuses fewer than two in production" (int $domain.nameserverCount)) -}}
+{{- end -}}
+{{- if gt (int $domain.nameserverCount) 13 -}}
+{{- fail (printf "domain.nameserverCount is %d; more than 13 NS records overflow the 512-byte referral every resolver asks for first and force each of them to retry over TCP" (int $domain.nameserverCount)) -}}
+{{- end -}}
+{{/*
+A derived ns<N> is a promise that the name resolves. When this chart also
+publishes the node addresses those names point at, it can check the promise:
+more derived names than published addresses means at least one nameserver in
+the delegation answers from nowhere, which costs every resolver a timeout on
+the way to an answer it could have had immediately.
+*/}}
+{{- if and (not .Values.control.nameservers) .Values.externalIPService.enabled -}}
+{{- if gt (int $domain.nameserverCount) (len .Values.externalIPService.addresses) -}}
+{{- fail (printf "domain.nameserverCount is %d but externalIPService.addresses publishes %d node address(es); each derived ns<N>.%s.%s needs one to resolve to. Lower the count, or publish an address for every name" (int $domain.nameserverCount) (len .Values.externalIPService.addresses) $domain.service $domain.base) -}}
+{{- end -}}
+{{- end -}}
+{{/*
+control.nameservers wins over the derived names, and the two placeholders this
+chart ships are entries like any other — so setting domain.base and forgetting
+to clear them would publish example.net in an NS record. Refuse that pairing
+here, where the reason can be stated, rather than at the registrar.
+*/}}
+{{- range .Values.control.nameservers -}}
+{{- if include "dns.reservedHostname" (dict "host" .) -}}
+{{- fail (printf "control.nameservers still lists the placeholder %q while domain.base is set; empty control.nameservers to derive ns1..ns%d.%s.%s, or replace the list with the real delegated names" . (int $domain.nameserverCount) $domain.service $domain.base) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{/*
+control.nameservers may now be empty, because empty is how an operator asks for
+the derived names. The schema can no longer require two entries, so the floor
+moves here: the server refuses to start on an empty DNS_NAMESERVERS, and every
+zone this chart serves publishes NS records built from this list.
+*/}}
+{{- if eq (len (include "dns.nameservers" . | fromYamlArray)) 0 -}}
+{{- fail "control.nameservers is empty and domain.base is not set, so no nameserver names exist: list the delegated names in control.nameservers, or set domain.base to derive ns1..ns<domain.nameserverCount>.<domain.service>.<domain.base>" -}}
+{{- end -}}
 {{- $platform := .Values.platform -}}
 {{- if not (hasPrefix "/data/" $platform.storePath) -}}
 {{- fail "platform.storePath must live on the control data volume under /data/" -}}
@@ -435,8 +691,8 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if not $platform.mail.apiUrl -}}
 {{- fail "platform.mail.enabled requires platform.mail.apiUrl" -}}
 {{- end -}}
-{{- if not $platform.mail.hostname -}}
-{{- fail "platform.mail.enabled requires platform.mail.hostname" -}}
+{{- if not (include "dns.mailHost" .) -}}
+{{- fail "platform.mail.enabled requires platform.mail.hostname, or domain.base to derive mail.<domain.service>.<domain.base>" -}}
 {{- end -}}
 {{- if not $platform.mail.existingSecret -}}
 {{- fail "platform.mail.enabled requires platform.mail.existingSecret; the chart never renders engine tokens" -}}
@@ -455,8 +711,8 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if ne $platform.billing.provider "stripe" -}}
 {{- fail "platform.billing.provider must be empty or stripe; the fake provider is a local-development mode only" -}}
 {{- end -}}
-{{- if not (hasPrefix "https://" $platform.billing.publicUrl) -}}
-{{- fail "platform.billing.provider=stripe requires an https platform.billing.publicUrl" -}}
+{{- if not (hasPrefix "https://" (include "dns.consoleURL" .)) -}}
+{{- fail "platform.billing.provider=stripe requires an https platform.billing.publicUrl, or domain.base to derive https://<domain.service>.<domain.base>" -}}
 {{- end -}}
 {{- if not $platform.billing.customerEmail -}}
 {{- fail "platform.billing.provider=stripe requires platform.billing.customerEmail" -}}
@@ -558,8 +814,8 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if not .Values.httpRoute.acknowledgePublicControlPlane -}}
 {{- fail "httpRoute.enabled requires httpRoute.acknowledgePublicControlPlane=true" -}}
 {{- end -}}
-{{- if eq (len .Values.httpRoute.hostnames) 0 -}}
-{{- fail "httpRoute.hostnames must contain at least one hostname" -}}
+{{- if eq (len (include "dns.httpRouteHostnames" . | fromYamlArray)) 0 -}}
+{{- fail "httpRoute.enabled requires at least one hostname: list them in httpRoute.hostnames, or set domain.base to derive <domain.service>.<domain.base>" -}}
 {{- end -}}
 {{- end -}}
 {{- if .Values.snapshotRoute.enabled -}}
@@ -569,8 +825,8 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if not .Values.snapshotRoute.acknowledgePublicSnapshotFeed -}}
 {{- fail "snapshotRoute.enabled requires snapshotRoute.acknowledgePublicSnapshotFeed=true" -}}
 {{- end -}}
-{{- if not .Values.snapshotRoute.hostname -}}
-{{- fail "snapshotRoute.hostname is required when snapshotRoute.enabled=true" -}}
+{{- if not (include "dns.snapshotHost" .) -}}
+{{- fail "snapshotRoute.enabled requires snapshotRoute.hostname, or domain.base to derive snapshot.<domain.service>.<domain.base>" -}}
 {{- end -}}
 {{- end -}}
 {{- if .Values.tls.enabled -}}
@@ -583,15 +839,22 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if not .Values.tls.secretName -}}
 {{- fail "tls.secretName is required when tls.enabled=true" -}}
 {{- end -}}
-{{- if eq (len .Values.tls.dnsNames) 0 -}}
-{{- fail "tls.dnsNames must contain at least one hostname when tls.enabled=true" -}}
+{{/*
+The certificate must cover the names actually routed, whether those were
+listed or derived. Comparing effective names rather than raw values is what
+lets a derived tls.dnsNames satisfy a listed httpRoute.hostnames, and it keeps
+these three checks meaning what they always meant when nothing is derived.
+*/}}
+{{- $tlsNames := include "dns.tlsDNSNames" . | fromYamlArray -}}
+{{- if eq (len $tlsNames) 0 -}}
+{{- fail "tls.enabled requires at least one hostname: list them in tls.dnsNames, or set domain.base to derive the console and snapshot hosts" -}}
 {{- end -}}
-{{- if and .Values.snapshotRoute.enabled (not (has .Values.snapshotRoute.hostname .Values.tls.dnsNames)) -}}
-{{- fail "tls.dnsNames must include snapshotRoute.hostname when both features are enabled" -}}
+{{- if and .Values.snapshotRoute.enabled (not (has (include "dns.snapshotHost" .) $tlsNames)) -}}
+{{- fail "tls.dnsNames must include the snapshot hostname when both features are enabled" -}}
 {{- end -}}
 {{- if .Values.httpRoute.enabled -}}
-{{- range .Values.httpRoute.hostnames -}}
-{{- if not (has . $.Values.tls.dnsNames) -}}
+{{- range (include "dns.httpRouteHostnames" . | fromYamlArray) -}}
+{{- if not (has . $tlsNames) -}}
 {{- fail "tls.dnsNames must include every httpRoute hostname when both features are enabled" -}}
 {{- end -}}
 {{- end -}}
@@ -667,12 +930,12 @@ on a provider account that has run out of block-storage subscriptions.
 {{- if not .Values.authority.topologySpread.enabled -}}
 {{- fail "production=true requires authority topology spread constraints" -}}
 {{- end -}}
-{{- if lt (len .Values.control.nameservers) 2 -}}
-{{- fail "production=true requires at least two control.nameservers" -}}
+{{- $nameservers := include "dns.nameservers" . | fromYamlArray -}}
+{{- if lt (len $nameservers) 2 -}}
+{{- fail "production=true requires at least two nameservers: list them in control.nameservers, or set domain.base with domain.nameserverCount >= 2" -}}
 {{- end -}}
-{{- range .Values.control.nameservers -}}
-{{- $name := trimSuffix "." (lower .) -}}
-{{- if or (contains "replace" $name) (eq $name "example.com") (hasSuffix ".example.com" $name) (eq $name "example.net") (hasSuffix ".example.net" $name) (eq $name "example.org") (hasSuffix ".example.org" $name) (eq $name "invalid") (hasSuffix ".invalid" $name) (eq $name "localhost") (hasSuffix ".localhost" $name) (eq $name "test") (hasSuffix ".test" $name) -}}
+{{- range $nameservers -}}
+{{- if include "dns.reservedHostname" (dict "host" .) -}}
 {{- fail "production nameservers must be real delegated names, not placeholders or reserved test names" -}}
 {{- end -}}
 {{- end -}}

@@ -3,7 +3,19 @@
 # secretKeyRefs, the upload volume, and the extra HTTPRoute rules all render
 # together. Every digest, hostname, address, and Secret name here is a
 # placeholder and must never be used for a live release.
+#
+# It is also the EXPLICIT-WINS half of the domain pair. ci/production-values.yaml
+# sets domain.base and empties the hostname values, so it covers derivation.
+# This file sets domain.base AND spells out control.nameservers,
+# httpRoute.hostnames, platform.mail.hostname and platform.billing.publicUrl,
+# which is the harder case: a helper that ever treated the derived name as an
+# override rather than a default would change this render, and CI would say so.
+# Deriving fills an empty value; it never replaces one. Do not empty the
+# hostnames below to "modernise" this file — that is the coverage.
 production: true
+domain:
+  # Set on purpose while every hostname below stays explicit. See the header.
+  base: benebsworth.com
 images:
   server:
     tag: ""
@@ -37,6 +49,9 @@ platform:
     # the request never leaves the cluster network.
     apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
     tenant: simple
+    # DeepHost's own ingress and its own wildcard suffix. Neither derives from
+    # domain.base — they name another system that only shares this zone by
+    # coincidence — so both stay spelled out here even though base is set.
     gatewayHostname: deephost.benebsworth.com
     gatewayAddresses:
       - 203.0.113.10

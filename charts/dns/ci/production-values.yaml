@@ -1,7 +1,24 @@
-# Render-only fixture. The deterministic image digests and Secret name must
-# never be used for a live release; nameserver strings mirror the intended
-# production names solely so the production guard exercises its success path.
+# Render-only fixture, and the DERIVED half of the domain pair: like the real
+# deployment in deploy/paprika/application.yaml it names one zone and empties
+# control.nameservers, so the delegation falls out of domain.base instead of
+# being written by hand. ci/platform-values.yaml is the other half — domain.base
+# set while every hostname stays explicit — so between them the chart job covers
+# both rules: derive when empty, never override when set.
+#
+# Only the nameservers derive HERE, because httpRoute, snapshotRoute and tls
+# stay off in this file: the ci.yml steps that turn them on also pass their own
+# --set hostnames, and two of those steps assert the chart REFUSES a public
+# route with no acknowledgement, which enabling them here would defeat. The
+# other five derived names are covered by rendering the values extracted from
+# deploy/paprika/application.yaml.
+#
+# The deterministic image digests and Secret name must never be used for a live
+# release. The zone matches the intended production one so that the production
+# guard, which refuses placeholder and RFC 2606 nameserver names, exercises its
+# success path against DERIVED names rather than hand-written ones.
 production: true
+domain:
+  base: benebsworth.com
 images:
   server:
     tag: ""
@@ -13,9 +30,12 @@ auth:
   existingSecret: dns-auth-render-test
 control:
   httpMaxBodyBytes: 8388608
-  nameservers:
-    - ns1.dns.benebsworth.com
-    - ns2.dns.benebsworth.com
+  # Empty, not deleted: the chart's default for this key is two example.net
+  # placeholders which would win over the derivation and then be rejected by
+  # the production guard. [] is how derivation is requested, and it is what
+  # deploy/paprika/application.yaml carries. Renders ns1.dns.benebsworth.com
+  # and ns2.dns.benebsworth.com.
+  nameservers: []
   persistence:
     storageClass: vultr-block-storage-retain
 authority:

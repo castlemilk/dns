@@ -6,6 +6,16 @@
 # cannot deploy mutable or guessed images. The dns-auth Secret must already
 # contain independent api-bearer-token and snapshot-bearer-token keys; never
 # add token data here.
+#
+# ONE DOMAIN. Every public name this deployment answers on — console, snapshot
+# feed, certificate names, Stripe return origin, mail host, and the delegated
+# nameservers — derives from domain.base in the values below. Moving to a new
+# zone is one edit. The keys that used to spell those names out are still here,
+# emptied, because empty is how the chart is asked to derive: an explicit value
+# always wins, so any one left set would silently pin that single name to the
+# old zone while the other five moved. The one hostname deliberately still
+# spelled out is platform.hosting.gatewayHostname; the comment at that value
+# says why, and getting it wrong breaks hosting silently.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -73,6 +83,28 @@ spec:
     pollInterval: 60s
     valuesFile: |
       production: true
+      # THE LEVER. base is the only value here that changes when this platform
+      # moves zone; service and nameserverCount describe the shape inside
+      # whatever zone that is, and stay put. What they produce today:
+      #   console / Connect API   dns.benebsworth.com
+      #   snapshot feed           snapshot.dns.benebsworth.com
+      #   certificate             both of the names above
+      #   Stripe return origin    https://dns.benebsworth.com
+      #   mail host (once on)     mail.dns.benebsworth.com
+      #   delegation              ns1.dns.benebsworth.com, ns2.dns.benebsworth.com
+      domain:
+        base: benebsworth.com
+        # Pinned rather than inherited, both of these: they decide what every
+        # served zone publishes in its NS records and what name the certificate
+        # is issued for, and neither should move because a chart default did.
+        service: dns
+        # Two is what is delegated today — ns1 and ns2, per
+        # docs/production-launch.md. A third derived name would be a promise
+        # that ns3.dns.benebsworth.com resolves, and every resolver that
+        # believed it would pay a timeout; raise this only after that A record
+        # exists. The chart also refuses a count larger than the number of
+        # externalIPService.addresses published at the bottom of this file.
+        nameserverCount: 2
       images:
         server:
           tag: ""
@@ -107,10 +139,15 @@ spec:
         mail:
           # Still off — the Secret below now exists, but three things outside
           # this cluster do not yet: MX delegation to the published node
-          # addresses, a certificate for mail.dns.benebsworth.com (without one
-          # maild disables the implicit-TLS listeners), and confirmation that
-          # Vultr permits outbound 25 from these nodes. Flip enabled to true on
-          # both this block and the mail component once those are true.
+          # addresses, a certificate for the mail host (without one maild
+          # disables the implicit-TLS listeners), and confirmation that Vultr
+          # permits outbound 25 from these nodes. Flip enabled to true on both
+          # this block and the mail component once those are true.
+          #
+          # There is no hostname key here: it derives as
+          # mail.<domain.service>.<domain.base>, mail.dns.benebsworth.com
+          # today. That name is deliberately NOT in the certificate the chart
+          # requests — see tls.dnsNames below.
           enabled: false
           existingSecret: dns-mail-engine
           apiTokenKey: api-token
@@ -131,25 +168,51 @@ spec:
           # POST /billing/v1/stripe/webhook answers from the internet, then set
           # provider to stripe. The price is a PLACEHOLDER (A$10.00/month,
           # tagged placeholder=true in Stripe metadata) — set the real one first.
-          provider: ""
-          publicUrl: https://dns.benebsworth.com
+          provider: stripe
+          # Empty derives https://<the console host>, https://dns.benebsworth.com
+          # today. This is the origin Stripe returns a customer to and the one
+          # its webhooks are posted at, so it has to be the same host the
+          # HTTPRoute claims and the certificate covers — deriving it is what
+          # makes that true by construction instead of by inspection. Set it
+          # explicitly only for something the derivation cannot express: a
+          # non-standard port, or a separate billing origin.
+          publicUrl: ""
           customerEmail: ben.ebsworth@gmail.com
           existingSecret: dns-billing-engine
           secretKeyKey: stripe-secret-key
           webhookSecretKey: stripe-webhook-secret
           priceIdKey: stripe-price-id
+          webhookRoute:
+            # Stripe posts the raw path, not a Connect RPC path, so it needs its
+            # own rule — without it the POST lands on the console and 404s.
+            enabled: true
         hosting:
           enabled: true
           apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
+          # STAYS EXPLICIT, and must not be folded into domain.base. This names
+          # DeepHost's ingress, not this platform's: it is where attached
+          # customer apexes are pointed with an A/ALIAS record. It sits under
+          # benebsworth.com today only because one operator happens to run both
+          # systems, and DeepHost can be moved to any zone without this chart
+          # being involved. Derive it and a domain.base change would repoint
+          # every attached customer apex at a host that does not exist — which
+          # renders cleanly, deploys cleanly, and surfaces as customer sites
+          # going dark. It changes when DeepHost changes, by hand, here.
           gatewayHostname: apps.deephost.benebsworth.com
           existingSecret: dns-hosting-engine
           apiTokenKey: api-token
       control:
         # Permit zone-file imports up to the aggregate publication ceiling.
         httpMaxBodyBytes: 8388608
-        nameservers:
-          - ns1.dns.benebsworth.com
-          - ns2.dns.benebsworth.com
+        # Empty asks for the derived delegation: ns1.dns.benebsworth.com and
+        # ns2.dns.benebsworth.com, from the domain block above.
+        #
+        # The key cannot simply be deleted. The chart's own default for it is
+        # two ns<N>.example.net placeholders, and an explicit list always wins
+        # over the derivation, so a missing key here would publish example.net
+        # in the NS records of every zone served. [] is the opt-in; the chart
+        # refuses the deleted-key case by name rather than letting it out.
+        nameservers: []
         persistence:
           # The cluster default deletes its Vultr volume when the PVC is
           # removed. Retain protects the backing volume from Paprika pruning.
@@ -210,8 +273,11 @@ spec:
           name: paprika
           namespace: envoy-gateway-system
           sectionName: https
-        hostnames:
-          - dns.benebsworth.com
+        # Empty derives the single console host <domain.service>.<domain.base>,
+        # dns.benebsworth.com today. List names here only to claim more than
+        # one; the first entry then becomes the canonical origin everything
+        # else follows.
+        hostnames: []
       dnsService:
         # Prefer an out-of-band LB with UDP+TCP rules on one stable address.
         enabled: false
@@ -231,23 +297,37 @@ spec:
         # token; no Connect procedure or UI path is exposed on this hostname.
         enabled: true
         acknowledgePublicSnapshotFeed: true
-        hostname: snapshot.dns.benebsworth.com
+        # Empty derives snapshot.<domain.service>.<domain.base>,
+        # snapshot.dns.benebsworth.com today.
+        hostname: ""
       tls:
         enabled: true
         clusterIssuer: letsencrypt-prod-dns
         secretName: dns-tls
-        dnsNames:
-          - dns.benebsworth.com
-          - snapshot.dns.benebsworth.com
+        # Empty derives exactly the two names this chart routes: the console
+        # host and the snapshot host. That is the same pair spelled out here
+        # before, and deriving it is what stops the certificate and the routes
+        # drifting apart on a zone move — the failure that pair produces is a
+        # cert for a name nothing serves, discovered at renewal.
+        #
+        # The mail host is deliberately absent and is not added automatically.
+        # cert-manager fails an entire Order when any single name in it cannot
+        # be validated, so listing mail.dns.benebsworth.com before its A record
+        # exists would take the console certificate down with it. Add it here
+        # by hand, alongside the derived names, once that name resolves.
+        dnsNames: []
         referenceGrant:
           enabled: true
           gatewayNamespace: envoy-gateway-system
       # The nameservers the delegation actually points at. A Vultr load balancer
       # cannot carry TCP and UDP 53 together (its API refuses a second
       # forwarding rule on a frontend port already in use), so authoritative DNS
-      # is published straight onto node addresses. These three IPs are what
-      # ns1/ns2/ns3.dns.benebsworth.com resolve to; without this block the
-      # Service disappears and the public nameservers stop answering.
+      # is published straight onto node addresses. The derived nameserver names
+      # resolve to addresses in this list, which is why the chart refuses a
+      # domain.nameserverCount larger than the number of addresses here: every
+      # name in the delegation has to have somewhere to answer from. Without
+      # this block the Service disappears and the public nameservers stop
+      # answering.
       externalIPService:
         enabled: true
         addresses:

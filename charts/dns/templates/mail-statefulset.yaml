@@ -151,7 +151,7 @@ spec:
             # record and the control plane's MAIL_HOSTNAME all have to agree on,
             # and one value is the only way to keep four things equal.
             - name: MAILD_HOSTNAME
-              value: {{ .Values.platform.mail.hostname | quote }}
+              value: {{ include "dns.mailHost" . | quote }}
             # The bearer arrives as a file, never as MAILD_ADMIN_TOKEN and never
             # as an argument: an environment variable is readable from /proc and
             # lands in a crash dump, and a command line is in the process table.
