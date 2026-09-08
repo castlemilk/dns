@@ -549,6 +549,30 @@ func loadMail(getenv func(string) string, production bool) (Mail, error) {
 	return value, nil
 }
 
+// stripeKeyPrefixed reports whether the key carries a prefix Stripe issues for
+// server-side use. Publishable keys (pk_) are deliberately absent: they are safe
+// to expose and cannot authenticate an API call.
+func stripeKeyPrefixed(key string) bool {
+	for _, prefix := range []string{"sk_", "rk_", "rkcs_"} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripeKeyIsLive reports whether the key moves real money. Anything that is not
+// demonstrably live is treated as a test key, so a prefix nobody has seen before
+// fails closed against the production check rather than passing as live.
+func stripeKeyIsLive(key string) bool {
+	for _, prefix := range []string{"sk_live_", "rk_live_", "rkcs_live_"} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func loadBilling(getenv func(string) string, production bool, platformPath string) (Billing, error) {
 	provider := strings.ToLower(strings.TrimSpace(getenv("BILLING_PROVIDER")))
 	if provider == "" {
@@ -604,10 +628,16 @@ func loadBilling(getenv func(string) string, production bool, platformPath strin
 		if value.SecretKey == "" {
 			return Billing{}, fmt.Errorf("STRIPE_SECRET_KEY is required when BILLING_PROVIDER=stripe")
 		}
-		if !strings.HasPrefix(value.SecretKey, "sk_") && !strings.HasPrefix(value.SecretKey, "rk_") {
-			return Billing{}, fmt.Errorf("STRIPE_SECRET_KEY must start with sk_ or rk_")
+		// sk_ is a secret key, rk_ a restricted one, and rkcs_ the restricted key
+		// a Stripe sandbox issues (`stripe sandbox create`). rkcs_ was missing,
+		// so a sandbox key — the key type Stripe's own guidance steers you to for
+		// a first integration — was rejected as malformed rather than as a test
+		// key, which sends you looking for a typo instead of at the live/test
+		// rule below.
+		if !stripeKeyPrefixed(value.SecretKey) {
+			return Billing{}, fmt.Errorf("STRIPE_SECRET_KEY must start with sk_, rk_ or rkcs_")
 		}
-		live := strings.HasPrefix(value.SecretKey, "sk_live_") || strings.HasPrefix(value.SecretKey, "rk_live_")
+		live := stripeKeyIsLive(value.SecretKey)
 		if live != production {
 			return Billing{}, fmt.Errorf("STRIPE_SECRET_KEY must use a live key if and only if DNS_PRODUCTION=true")
 		}

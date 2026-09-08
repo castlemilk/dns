@@ -446,7 +446,24 @@ func TestBillingBlock(t *testing.T) {
 		{name: "webhook secret prefix", env: stripe(map[string]string{"STRIPE_WEBHOOK_SECRET": "sig_abcdefgh"}), wantErr: "STRIPE_WEBHOOK_SECRET entries must start with whsec_"},
 		{name: "too many secrets", env: stripe(map[string]string{"STRIPE_WEBHOOK_SECRET": "whsec_a1,whsec_b2,whsec_c3,whsec_d4"}), wantErr: "at most 3 secrets"},
 		{name: "price prefix", env: stripe(map[string]string{"STRIPE_PRICE_ID": "prod_abcdefgh"}), wantErr: "STRIPE_PRICE_ID must start with price_"},
-		{name: "secret key prefix", env: stripe(map[string]string{"STRIPE_SECRET_KEY": "pk_" + "test_fixture"}), wantErr: "STRIPE_SECRET_KEY must start with sk_ or rk_"},
+		{name: "secret key prefix", env: stripe(map[string]string{"STRIPE_SECRET_KEY": "pk_" + "test_fixture"}), wantErr: "STRIPE_SECRET_KEY must start with sk_, rk_ or rkcs_"},
+		// A Stripe sandbox (`stripe sandbox create`) issues an rkcs_ restricted
+		// key. It was rejected as malformed, which took the control plane down
+		// and sent us hunting for a typo when the real answer is the live/test
+		// rule: a test key simply cannot run with DNS_PRODUCTION=true.
+		{
+			name: "sandbox restricted key is a valid test key",
+			env:  stripe(map[string]string{"STRIPE_SECRET_KEY": "rkcs_" + stripeKey("test")[3:]}),
+			check: func(t *testing.T, billing config.Billing) {
+				// The point of the case: it loads at all. A sandbox key must
+				// also never be mistaken for a live one, or the production
+				// guard below would wave a test key through.
+				if billing.Provider != config.BillingProviderStripe {
+					t.Fatalf("Provider = %q, want stripe", billing.Provider)
+				}
+			},
+		},
+		{name: "an unknown prefix fails closed", env: stripe(map[string]string{"STRIPE_SECRET_KEY": "rkzz_" + stripeKey("live")[3:]}), wantErr: "STRIPE_SECRET_KEY must start with"},
 		{name: "customer email required", env: stripe(map[string]string{"BILLING_CUSTOMER_EMAIL": ""}), wantErr: "BILLING_CUSTOMER_EMAIL is required"},
 		{name: "public url shape", env: stripe(map[string]string{"BILLING_PUBLIC_URL": "example.com/billing"}), wantErr: "BILLING_PUBLIC_URL"},
 		{name: "fake addr must be loopback", env: withBase(map[string]string{"BILLING_PROVIDER": "fake", "BILLING_FAKE_ADDR": "0.0.0.0:8087"}), wantErr: "BILLING_FAKE_ADDR must bind a loopback address"},
@@ -563,6 +580,23 @@ func TestProductionRefusesFakeAndLocalEngines(t *testing.T) {
 			env: production(map[string]string{
 				"BILLING_PROVIDER":       "stripe",
 				"STRIPE_SECRET_KEY":      stripeKey("test"),
+				"STRIPE_WEBHOOK_SECRET":  "whsec_abcdefghij",
+				"STRIPE_PRICE_ID":        "price_abcdefghij",
+				"BILLING_CUSTOMER_EMAIL": "billing@example.com",
+				"BILLING_PUBLIC_URL":     "https://simple.example.com",
+			}),
+			wantErr: "STRIPE_SECRET_KEY must use a live key",
+		},
+		{
+			// The production cluster was pointed at a Stripe sandbox. Once the
+			// rkcs_ prefix is recognised the key is well-formed, so this is the
+			// rule that must stop it — a sandbox moves no money, and a
+			// deployment billing real customers against it would take payment
+			// that never arrives.
+			name: "sandbox stripe key in production",
+			env: production(map[string]string{
+				"BILLING_PROVIDER":       "stripe",
+				"STRIPE_SECRET_KEY":      "rkcs_" + stripeKey("test")[3:],
 				"STRIPE_WEBHOOK_SECRET":  "whsec_abcdefghij",
 				"STRIPE_PRICE_ID":        "price_abcdefghij",
 				"BILLING_CUSTOMER_EMAIL": "billing@example.com",

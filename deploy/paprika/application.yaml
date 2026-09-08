@@ -152,23 +152,34 @@ spec:
           existingSecret: dns-mail-engine
           apiTokenKey: api-token
         billing:
-          # Wired to a Stripe SANDBOX (test mode), created with `stripe sandbox
-          # create` so nothing touches the live Gamma Systems account. The
-          # sandbox expires 2026-09-15 unless claimed.
+          # The secret below holds a Stripe SANDBOX key (test mode), created
+          # with `stripe sandbox create` so nothing touches the live Gamma
+          # Systems account. The sandbox expires 2026-09-15 unless claimed. It
+          # is useful for a non-production deployment; it cannot be used here.
           #
-          # provider is "" — billing is DISABLED — for one reason: Stripe
-          # delivers webhooks to a public HTTPS URL, and dns.benebsworth.com
-          # does not resolve publicly. The certificate exists only because
-          # cert-manager used a dns01 challenge, which never needed
-          # reachability. With billing on and webhooks undeliverable, a checkout
-          # would succeed and the subscription would never activate — a silent
-          # failure, which is exactly what the Stripe guidance warns about.
+          # provider is "" — billing is DISABLED — and a sandbox key cannot
+          # change that. This deployment runs DNS_PRODUCTION=true, and the
+          # control plane refuses a test key in production
+          # (internal/config/engines.go): a sandbox moves no money, so billing
+          # real customers against it would take payment that never arrives.
+          # Turning this on needs a LIVE restricted key from the real account,
+          # not the sandbox below.
           #
-          # To turn on: add the public A record for dns.benebsworth.com, confirm
-          # POST /billing/v1/stripe/webhook answers from the internet, then set
-          # provider to stripe. The price is a PLACEHOLDER (A$10.00/month,
-          # tagged placeholder=true in Stripe metadata) — set the real one first.
-          provider: stripe
+          # Two things must also be true first, independent of the key:
+          #
+          #  1. Stripe delivers webhooks to a public HTTPS URL, and
+          #     dns.benebsworth.com must answer from the internet. The
+          #     certificate is not evidence of that — cert-manager used a dns01
+          #     challenge, which never needed reachability. With billing on and
+          #     webhooks undeliverable a checkout succeeds and the subscription
+          #     never activates: a silent failure, exactly what the Stripe
+          #     guidance warns about.
+          #  2. The price is a PLACEHOLDER (A$10.00/month, tagged
+          #     placeholder=true in Stripe metadata). Set the real one first.
+          #
+          # Enabling this without (1) and (2) charges people incorrectly, so it
+          # is a deliberate decision, not a config toggle.
+          provider: ""
           # Empty derives https://<the console host>, https://dns.benebsworth.com
           # today. This is the origin Stripe returns a customer to and the one
           # its webhooks are posted at, so it has to be the same host the
@@ -185,7 +196,10 @@ spec:
           webhookRoute:
             # Stripe posts the raw path, not a Connect RPC path, so it needs its
             # own rule — without it the POST lands on the console and 404s.
-            enabled: true
+            # Off while provider is "": the chart refuses the pair, because a
+            # webhook route with no billing engine behind it is a public
+            # endpoint that accepts Stripe POSTs and does nothing with them.
+            enabled: false
         hosting:
           enabled: true
           apiUrl: http://deephost-controlplane.deephost.svc.cluster.local:8080
