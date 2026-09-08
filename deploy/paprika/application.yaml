@@ -210,10 +210,21 @@ spec:
         referenceGrant:
           enabled: true
           gatewayNamespace: envoy-gateway-system
-      nodePortService:
-        # The separately managed Vultr LB must target core workers on TCP+UDP
-        # 30053 and use TCP 30053 for health before this Application is created.
+      # The nameservers the delegation actually points at. A Vultr load balancer
+      # cannot carry TCP and UDP 53 together (its API refuses a second
+      # forwarding rule on a frontend port already in use), so authoritative DNS
+      # is published straight onto node addresses. These three IPs are what
+      # ns1/ns2/ns3.dns.benebsworth.com resolve to; without this block the
+      # Service disappears and the public nameservers stop answering.
+      externalIPService:
         enabled: true
+        addresses:
+          - 149.28.170.95
+          - 139.180.160.11
+          - 207.148.84.78
+      nodePortService:
+        # Mutually exclusive with externalIPService above (the chart enforces it).
+        enabled: false
         nodePort: 30053
         externalTrafficPolicy: Cluster
 
