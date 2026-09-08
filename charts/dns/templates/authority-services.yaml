@@ -11,7 +11,15 @@ metadata:
   {{- end }}
 spec:
   clusterIP: None
-  publishNotReadyAddresses: false
+  # publishNotReadyAddresses is deliberately NOT set. false is the API default,
+  # so the server stores nothing, and a GitOps differ comparing this manifest to
+  # the live object sees a field that is present here and absent there — forever.
+  # That kept this Service permanently OutOfSync, which re-armed self-heal on
+  # every cooldown and left the Application reconciling in a loop.
+  #
+  # The default is also the behaviour we want: an authority pod must not receive
+  # DNS traffic through this Service until it is ready, because a pod that has
+  # not loaded a snapshot answers REFUSED.
   ports:
     - name: http
       port: {{ .Values.authority.healthService.port }}
