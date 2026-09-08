@@ -134,7 +134,21 @@ spec:
           # Raise only after heap benchmarks and resource limits are reviewed.
           maxBodyBytes: 8388608
         cache:
+          # Ephemeral snapshot cache, on purpose. The Vultr account is at its
+          # block-storage SUBSCRIPTION cap (a count limit, 10 of 10), and the
+          # third authority's 1Gi claim sat Pending behind it for two days.
+          # Three 1Gi caches were consuming three of the ten slots to hold a
+          # file that is a recovery copy, not serving state.
+          #
+          # What this gives up: a restarted authority can no longer serve from
+          # its own last-known snapshot while the control plane is unreachable;
+          # it must reach control first. Nothing on the query path changes — a
+          # query reads an in-memory pointer and never touches the cache file.
+          # Bounded by three replicas behind a minAvailable=2 PDB, which do not
+          # restart together. Revert both lines once the cap is raised.
+          acknowledgeEphemeralCache: true
           persistence:
+            enabled: false
             storageClass: vultr-block-storage-retain
       observability:
         enabled: true
