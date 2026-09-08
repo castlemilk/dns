@@ -146,6 +146,12 @@ func Open(path string, nameservers []string, opts ...StoreOption) (*Store, error
 		}
 		return nil, fmt.Errorf("initialize zone database: %w", err)
 	}
+	if err := store.updateTx(context.Background(), "reconcile_nameservers", store.reconcileNameservers); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			return nil, fmt.Errorf("reconcile zone nameservers: %v; close database: %w", err, closeErr)
+		}
+		return nil, fmt.Errorf("reconcile zone nameservers: %w", err)
+	}
 	if err := store.viewTx(context.Background(), "validate_admission", store.validateAdmission); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			return nil, fmt.Errorf("validate existing zone database: %v; close database: %w", err, closeErr)
@@ -1137,6 +1143,74 @@ func ensureEmptyBuckets(tx *bbolt.Tx) error {
 		}
 		return nil
 	})
+}
+
+// reconcileNameservers republishes every zone's delegation when the configured
+// nameservers have changed since the zone was written.
+//
+// A zone stores the nameserver set it was created with, and managedRecords
+// derives its NS RRset from that stored copy. Nothing used to update it, and
+// nothing could: there is no UpdateZone RPC, managed SOA and NS records are
+// rejected by UpdateRecord, and a REPLACE import is refused outright while a
+// website or mailbox is bound. So moving the platform to a new domain left every
+// existing zone publishing nameserver names that no longer resolve, permanently
+// and silently — the zone still validated, because its NS records agreed with
+// its own stale list. Delegating such a zone points the internet at hosts that
+// answer nothing.
+//
+// The nameservers are a property of this deployment, not of the customer's zone,
+// so the configured set is the truth and the stored copy follows it. The serial
+// is bumped for every zone that changes, because a delegation that moves without
+// a newer serial leaves secondaries and caches on the old answer.
+//
+// The store has no logger by design; this runs inside updateTx, so it is visible
+// as a store transaction metric with operation "reconcile_nameservers".
+func (s *Store) reconcileNameservers(tx *bbolt.Tx) error {
+	zones := tx.Bucket(zonesBucket)
+	if zones == nil {
+		return nil
+	}
+	now := s.now()
+	stale := make([]Zone, 0)
+	if err := zones.ForEach(func(_, raw []byte) error {
+		var value Zone
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("decode zone for nameserver reconcile: %w", err)
+		}
+		if !slices.Equal(value.Nameservers, s.nameservers) {
+			stale = append(stale, value)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, value := range stale {
+		value.Nameservers = slices.Clone(s.nameservers)
+		value.Serial = nextSerial(value.Serial, now)
+		value.UpdatedAt = now
+
+		// Rebuild only the managed SOA and NS records. Everything the customer
+		// put in the zone is carried across untouched, which is the whole point
+		// of doing this here rather than asking an operator to re-import.
+		managed, err := managedRecords(value, now)
+		if err != nil {
+			return err
+		}
+		for _, record := range value.Records {
+			if record.Managed {
+				continue
+			}
+			managed = append(managed, record)
+		}
+		value.Records = managed
+		if err := ValidateSnapshot([]Zone{value}); err != nil {
+			return fmt.Errorf("validate zone %q after nameserver reconcile: %w", value.Name, err)
+		}
+		if err := putZone(tx, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) validateAdmission(tx *bbolt.Tx) error {

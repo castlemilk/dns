@@ -834,3 +834,132 @@ func assertSOASerial(t *testing.T, value zone.Zone, want uint32) {
 		t.Errorf("SOA serial = %d, want %d", soa.Serial, want)
 	}
 }
+
+// TestReopeningWithNewNameserversRepublishesEveryZone covers the way a domain
+// move used to strand every zone that predated it.
+//
+// A zone stores the nameservers it was created with and its NS RRset is derived
+// from that copy, so changing the deployment's nameservers left older zones
+// publishing names that no longer resolved. Nothing could repair them: there is
+// no UpdateZone RPC, UpdateRecord refuses managed NS records, and a REPLACE
+// import is rejected outright once a website or mailbox is bound. Delegating
+// such a zone would have pointed the internet at hosts that answer nothing.
+func TestReopeningWithNewNameserversRepublishesEveryZone(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "moved.db")
+
+	before := []string{"ns1.old.example", "ns2.old.example"}
+	store, err := zone.Open(path, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(context.Background(), "customer.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A record the customer owns, which must survive the republish untouched.
+	owned := mustNormalizeRecord(t, created.Name, "www", zone.TypeA, 300, "192.0.2.10")
+	if _, err := store.CreateRecord(context.Background(), created.ID, owned); err != nil {
+		t.Fatal(err)
+	}
+	staleSerial := created.Serial
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	after := []string{"ns1.new.example", "ns2.new.example"}
+	reopened, err := zone.Open(path, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+
+	values, err := reopened.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 {
+		t.Fatalf("List returned %d zones, want 1", len(values))
+	}
+	got := values[0]
+
+	wantNS := []string{"ns1.new.example.", "ns2.new.example."}
+	if !slices.Equal(got.Nameservers, wantNS) {
+		t.Errorf("Nameservers = %v, want %v", got.Nameservers, wantNS)
+	}
+
+	// The served NS RRset is what a resolver actually follows, so it is the part
+	// that has to move — not just the stored list beside it.
+	served := make([]string, 0, 2)
+	var soa string
+	userRecords := 0
+	for _, record := range got.Records {
+		switch {
+		case record.Type == zone.TypeNS:
+			served = append(served, record.Value)
+		case record.Type == zone.TypeSOA:
+			soa = record.Value
+		case !record.Managed:
+			userRecords++
+		}
+	}
+	slices.Sort(served)
+	if !slices.Equal(served, wantNS) {
+		t.Errorf("served NS records = %v, want %v", served, wantNS)
+	}
+	if !strings.HasPrefix(soa, "ns1.new.example.") {
+		t.Errorf("SOA MNAME = %q, want it to name the new primary", soa)
+	}
+	if userRecords != 1 {
+		t.Errorf("user records surviving = %d, want 1 — a republish must not eat the customer's zone", userRecords)
+	}
+	// Without a newer serial, secondaries and caches keep serving the old
+	// delegation, so moving the records alone is not enough.
+	if got.Serial <= staleSerial {
+		t.Errorf("Serial = %d, want greater than %d", got.Serial, staleSerial)
+	}
+}
+
+// TestReopeningWithUnchangedNameserversLeavesSerialsAlone is the other half:
+// every restart must not look like a zone change to the outside world.
+func TestReopeningWithUnchangedNameserversLeavesSerialsAlone(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "steady.db")
+	nameservers := []string{"ns1.provider.example", "ns2.provider.example"}
+
+	store, err := zone.Open(path, nameservers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.Create(context.Background(), "steady.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := zone.Open(path, nameservers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := reopened.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	values, err := reopened.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) != 1 {
+		t.Fatalf("List returned %d zones, want 1", len(values))
+	}
+	if values[0].Serial != created.Serial {
+		t.Errorf("Serial = %d after a no-op reopen, want it unchanged at %d", values[0].Serial, created.Serial)
+	}
+}

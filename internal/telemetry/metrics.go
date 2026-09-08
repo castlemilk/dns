@@ -868,7 +868,7 @@ var (
 	snapshotApplyOutcomes = choices("success", "decode_error", "checksum_error", "clock_error", "rollback_error", "nameserver_error", "compile_error", "cache_write_error", "other")
 	cacheOperations       = choices("load", "write", "other")
 	transactionTypes      = choices("read", "write", "other")
-	storeOperations       = choices("initialize", "validate_admission", "initialize_restore", "list_zones", "get_zone", "create_zone", "delete_zone", "import_zone", "restore_snapshot", "create_record", "update_record", "delete_record", "apply_record_set", "platform_read", "platform_write", "platform_backup", "other")
+	storeOperations       = choices("initialize", "validate_admission", "reconcile_nameservers", "initialize_restore", "list_zones", "get_zone", "create_zone", "delete_zone", "import_zone", "restore_snapshot", "create_record", "update_record", "delete_record", "apply_record_set", "platform_read", "platform_write", "platform_backup", "other")
 
 	engineKinds      = choices("dns", "hosting", "mail", "billing", "other")
 	engineOperations = choices(
