@@ -91,6 +91,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # Next.js writes its incremental cache here when it regenerates the
+            # prerendered landing page. The root filesystem is read-only, and
+            # without somewhere to write, every regeneration logs an EACCES
+            # against .next/cache — the page still updates from the in-memory
+            # cache, so the noise looks like a failure that isn't one. The
+            # standalone output ships no .next/cache, so nothing is masked.
+            - name: next-cache
+              mountPath: /app/.next/cache
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: next-cache
           emptyDir: {}
