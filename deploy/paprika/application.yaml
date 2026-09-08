@@ -86,21 +86,27 @@ spec:
       # THE LEVER. base is the only value here that changes when this platform
       # moves zone; service and nameserverCount describe the shape inside
       # whatever zone that is, and stay put. What they produce today:
-      #   console / Connect API   dns.benebsworth.com
-      #   snapshot feed           snapshot.dns.benebsworth.com
+      #   console / Connect API   deephost.benebsworth.com
+      #   snapshot feed           snapshot.deephost.benebsworth.com
       #   certificate             both of the names above
-      #   Stripe return origin    https://dns.benebsworth.com
-      #   mail host (once on)     mail.dns.benebsworth.com
-      #   delegation              ns1.dns.benebsworth.com, ns2.dns.benebsworth.com
+      #   Stripe return origin    https://deephost.benebsworth.com
+      #   mail host (once on)     mail.deephost.benebsworth.com
+      #   delegation              ns1.deephost.benebsworth.com, ns2.deephost.benebsworth.com
       domain:
         base: benebsworth.com
         # Pinned rather than inherited, both of these: they decide what every
         # served zone publishes in its NS records and what name the certificate
         # is issued for, and neither should move because a chart default did.
-        service: dns
+        #
+        # "deep", not the chart's "dns" default. That default is an artefact of
+        # the repository, module and namespace all being called dns; it named
+        # the platform after its first component. Nothing derives from it but
+        # the label, so the platform sits at deep.<base> and the DNS service is
+        # one thing it offers rather than the thing it is called.
+        service: deephost
         # Two is what is delegated today — ns1 and ns2, per
         # docs/production-launch.md. A third derived name would be a promise
-        # that ns3.dns.benebsworth.com resolves, and every resolver that
+        # that ns3.deephost.benebsworth.com resolves, and every resolver that
         # believed it would pay a timeout; raise this only after that A record
         # exists. The chart also refuses a count larger than the number of
         # externalIPService.addresses published at the bottom of this file.
@@ -145,7 +151,7 @@ spec:
           # this block and the mail component once those are true.
           #
           # There is no hostname key here: it derives as
-          # mail.<domain.service>.<domain.base>, mail.dns.benebsworth.com
+          # mail.<domain.service>.<domain.base>, mail.deephost.benebsworth.com
           # today. That name is deliberately NOT in the certificate the chart
           # requests — see tls.dnsNames below.
           enabled: false
@@ -168,7 +174,7 @@ spec:
           # Two things must also be true first, independent of the key:
           #
           #  1. Stripe delivers webhooks to a public HTTPS URL, and
-          #     dns.benebsworth.com must answer from the internet. The
+          #     deephost.benebsworth.com must answer from the internet. The
           #     certificate is not evidence of that — cert-manager used a dns01
           #     challenge, which never needed reachability. With billing on and
           #     webhooks undeliverable a checkout succeeds and the subscription
@@ -180,7 +186,7 @@ spec:
           # Enabling this without (1) and (2) charges people incorrectly, so it
           # is a deliberate decision, not a config toggle.
           provider: ""
-          # Empty derives https://<the console host>, https://dns.benebsworth.com
+          # Empty derives https://<the console host>, https://deephost.benebsworth.com
           # today. This is the origin Stripe returns a customer to and the one
           # its webhooks are posted at, so it has to be the same host the
           # HTTPRoute claims and the certificate covers — deriving it is what
@@ -218,8 +224,8 @@ spec:
       control:
         # Permit zone-file imports up to the aggregate publication ceiling.
         httpMaxBodyBytes: 8388608
-        # Empty asks for the derived delegation: ns1.dns.benebsworth.com and
-        # ns2.dns.benebsworth.com, from the domain block above.
+        # Empty asks for the derived delegation: ns1.deephost.benebsworth.com and
+        # ns2.deephost.benebsworth.com, from the domain block above.
         #
         # The key cannot simply be deleted. The chart's own default for it is
         # two ns<N>.example.net placeholders, and an explicit list always wins
@@ -288,9 +294,15 @@ spec:
           namespace: envoy-gateway-system
           sectionName: https
         # Empty derives the single console host <domain.service>.<domain.base>,
-        # dns.benebsworth.com today. List names here only to claim more than
-        # one; the first entry then becomes the canonical origin everything
-        # else follows.
+        # the apex deephost.benebsworth.com. Deriving rather than naming it is
+        # deliberate: this is the one value that would otherwise pin the console
+        # to a zone the rest of the deployment had already left.
+        #
+        # The apex is this platform's to serve. Its "/" is the marketing landing
+        # page and everything under it is the console, so one name covers both
+        # jobs the DeepHost landing app and a separate console used to split.
+        # List names here only to claim more than one; the first entry then
+        # becomes the canonical origin everything else follows.
         hostnames: []
       dnsService:
         # Prefer an out-of-band LB with UDP+TCP rules on one stable address.
@@ -312,7 +324,7 @@ spec:
         enabled: true
         acknowledgePublicSnapshotFeed: true
         # Empty derives snapshot.<domain.service>.<domain.base>,
-        # snapshot.dns.benebsworth.com today.
+        # snapshot.deephost.benebsworth.com today.
         hostname: ""
       tls:
         enabled: true
@@ -326,7 +338,7 @@ spec:
         #
         # The mail host is deliberately absent and is not added automatically.
         # cert-manager fails an entire Order when any single name in it cannot
-        # be validated, so listing mail.dns.benebsworth.com before its A record
+        # be validated, so listing mail.deephost.benebsworth.com before its A record
         # exists would take the console certificate down with it. Add it here
         # by hand, alongside the derived names, once that name resolves.
         dnsNames: []

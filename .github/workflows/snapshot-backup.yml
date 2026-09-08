@@ -54,7 +54,7 @@ jobs:
           # than a commit. The fallback keeps the nightly backup working if the
           # variable is unset; it is the only hostname outside the chart, and the
           # chart's domain.base cannot reach a GitHub Actions runner.
-          SNAPSHOT_URL: ${{ vars.SNAPSHOT_URL || 'https://snapshot.dns.benebsworth.com/internal/v1/snapshot' }}
+          SNAPSHOT_URL: ${{ vars.SNAPSHOT_URL || 'https://snapshot.deephost.benebsworth.com/internal/v1/snapshot' }}
           SOURCE_REVISION: ${{ github.sha }}
         run: scripts/backup-snapshot.sh
 

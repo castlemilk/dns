@@ -19,6 +19,10 @@
 production: true
 domain:
   base: benebsworth.com
+  # Mirrors deploy/paprika/application.yaml, which pins the label rather than
+  # inheriting the chart's "dns" default. Kept in step so this fixture keeps
+  # exercising the shape production actually renders.
+  service: deephost
 images:
   server:
     tag: ""
@@ -33,8 +37,8 @@ control:
   # Empty, not deleted: the chart's default for this key is two example.net
   # placeholders which would win over the derivation and then be rejected by
   # the production guard. [] is how derivation is requested, and it is what
-  # deploy/paprika/application.yaml carries. Renders ns1.dns.benebsworth.com
-  # and ns2.dns.benebsworth.com.
+  # deploy/paprika/application.yaml carries. Renders ns1.deephost.benebsworth.com
+  # and ns2.deephost.benebsworth.com.
   nameservers: []
   persistence:
     storageClass: vultr-block-storage-retain

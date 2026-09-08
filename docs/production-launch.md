@@ -33,10 +33,10 @@ remain unauthenticated. Never reuse either token for another service.
 
 The first Paprika launch uses these currently unclaimed names:
 
-- `dns.benebsworth.com` — proxied operator UI and Connect API;
-- `snapshot.dns.benebsworth.com` — unproxied, exact-path snapshot feed;
-- `ns1.dns.benebsworth.com` — Sydney VKE load-balancer authority;
-- `ns2.dns.benebsworth.com` — Melbourne VM authority; and
+- `deephost.benebsworth.com` — proxied operator UI and Connect API;
+- `snapshot.deephost.benebsworth.com` — unproxied, exact-path snapshot feed;
+- `ns1.deephost.benebsworth.com` — Sydney VKE load-balancer authority;
+- `ns2.deephost.benebsworth.com` — Melbourne VM authority; and
 - `canary.benebsworth.com` — opt-in child delegation used only after direct
   authority tests pass.
 
