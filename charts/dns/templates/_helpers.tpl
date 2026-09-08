@@ -631,11 +631,26 @@ valid YAML. Require the token Secret from whichever of the two places supplies i
 {{- if and (not .Values.control.persistence.existingClaim) (not .Values.control.persistence.storageClass) -}}
 {{- fail "production=true requires an explicit retaining control.persistence.storageClass (or existingClaim)" -}}
 {{- end -}}
-{{- if not .Values.authority.cache.persistence.enabled -}}
-{{- fail "production=true requires authority.cache.persistence.enabled=true" -}}
-{{- end -}}
+{{- if .Values.authority.cache.persistence.enabled -}}
 {{- if not .Values.authority.cache.persistence.storageClass -}}
 {{- fail "production=true requires an explicit retaining authority cache storageClass" -}}
+{{- end -}}
+{{- else -}}
+{{/*
+An ephemeral cache is permitted in production, but only as a decision somebody
+made on purpose. What it costs: the snapshot cache is a per-pod recovery copy of
+the last valid zone snapshot, so without it a restarted authority cannot serve
+until it has reached the control plane. It is NOT on the query path — a query
+reads an in-memory pointer — so steady-state serving is unaffected; what is lost
+is independence from the control plane across a restart.
+
+Accepting that is reasonable when replicas do not restart together (three
+replicas behind a minAvailable=2 PDB), and it is the only way to run this chart
+on a provider account that has run out of block-storage subscriptions.
+*/}}
+{{- if not .Values.authority.cache.acknowledgeEphemeralCache -}}
+{{- fail "production=true requires authority.cache.persistence.enabled=true, or authority.cache.acknowledgeEphemeralCache=true to accept that a restarted authority cannot serve until it has reached the control plane" -}}
+{{- end -}}
 {{- end -}}
 {{- if lt (int .Values.authority.replicaCount) 3 -}}
 {{- fail "production=true requires authority.replicaCount >= 3" -}}

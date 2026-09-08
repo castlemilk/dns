@@ -138,6 +138,12 @@ authority:
   headlessService:
     annotations: {}
   cache:
+    # Accept an ephemeral (emptyDir) snapshot cache in production. Off by
+    # default: with it false, production=true refuses to render without a
+    # persistent cache. Turning it on trades one property — a restarted
+    # authority can no longer serve from its own last-known snapshot while the
+    # control plane is unreachable — and nothing on the query path.
+    acknowledgeEphemeralCache: false
     persistence:
       enabled: true
       annotations: {}

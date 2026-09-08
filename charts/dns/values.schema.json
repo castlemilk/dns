@@ -462,6 +462,9 @@
                 "persistence"
               ],
               "properties": {
+                "acknowledgeEphemeralCache": {
+                  "type": "boolean"
+                },
                 "persistence": {
                   "$ref": "#/definitions/persistence"
                 }
