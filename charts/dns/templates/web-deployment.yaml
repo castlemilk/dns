@@ -91,12 +91,20 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            # Next.js writes its incremental cache here when it regenerates the
-            # prerendered landing page. The root filesystem is read-only, and
-            # without somewhere to write, every regeneration logs an EACCES
-            # against .next/cache — the page still updates from the in-memory
-            # cache, so the noise looks like a failure that isn't one. The
-            # standalone output ships no .next/cache, so nothing is masked.
+            # Next.js writes its fetch cache here when it regenerates the
+            # prerendered landing page. The root filesystem is read-only, so
+            # without somewhere to write it logs against .next/cache on every
+            # regeneration. The standalone output ships no .next/cache, so this
+            # mount masks nothing.
+            #
+            # It does NOT silence regeneration entirely. Next also rewrites the
+            # prerendered HTML at .next/server/app/index.html, which stays
+            # read-only and logs one EROFS per regeneration. That path cannot be
+            # mounted over — .next/server holds the compiled application, and an
+            # emptyDir there would hide it. The line is expected and harmless:
+            # the page is still regenerated and served correctly from the
+            # in-memory cache, as the live deployment shows. Silencing it needs
+            # a custom next.config `cacheHandler` writing outside /app.
             - name: next-cache
               mountPath: /app/.next/cache
       volumes:
