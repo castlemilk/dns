@@ -499,3 +499,98 @@ func testResponse(status int, body []byte) *http.Response {
 		Body:       io.NopCloser(bytes.NewReader(body)),
 	}
 }
+
+// TestFetchRefusesASnapshotThatEmptiesAServingAuthority covers the one input
+// that could take every delegated zone down at once.
+//
+// A control plane whose store comes back empty — a blank PVC, a skipped restore
+// step, a changed data path — publishes a well-formed document with no zones, a
+// good checksum and a current timestamp. Applying it answers REFUSED for every
+// customer domain on every replica within one poll, and nothing reports a
+// problem: the apply succeeds, the snapshot is fresh, and REFUSED is not
+// SERVFAIL. The authority must keep serving what it already has.
+func TestFetchRefusesASnapshotThatEmptiesAServingAuthority(t *testing.T) {
+	t.Parallel()
+	metrics := telemetry.Disabled()
+	now := time.Date(2026, time.September, 2, 3, 4, 5, 0, time.UTC)
+
+	servingRaw, _, err := Build([]zone.Zone{validZone("one.test", "ns1.dns.test.", now)}, now, false)
+	if err != nil {
+		t.Fatalf("Build serving: %v", err)
+	}
+	// Same shape a control plane with an empty store publishes: valid, current,
+	// correctly checksummed, and holding nothing.
+	emptyRaw, _, err := Build(nil, now.Add(time.Second), false)
+	if err != nil {
+		t.Fatalf("Build empty: %v", err)
+	}
+
+	var body atomic.Value
+	body.Store(servingRaw)
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		raw, ok := body.Load().([]byte)
+		if !ok {
+			return nil, errors.New("snapshot response body has unexpected type")
+		}
+		return testResponse(http.StatusOK, raw), nil
+	})}
+
+	cachePath := filepath.Join(t.TempDir(), "snapshot.json")
+	server := authoritative.New(nil, authoritative.DefaultMaxUDPSize, metrics)
+	status := NewStatus(time.Minute, metrics)
+	status.now = func() time.Time { return now }
+	consumer := NewConsumer(server, status, client, "http://control"+Path, "secret", cachePath, 1<<20, false, discardLogger(), metrics)
+	consumer.now = func() time.Time { return now }
+	if err := consumer.Fetch(context.Background()); err != nil {
+		t.Fatalf("initial Fetch: %v", err)
+	}
+	before := servedZones(server)
+	if before == 0 {
+		t.Fatal("setup served no zones; the guard would be vacuous")
+	}
+
+	body.Store(emptyRaw)
+	err = consumer.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("Fetch accepted a snapshot with no zones while a zone was being served")
+	}
+	if !strings.Contains(err.Error(), "refusing to empty this authority") {
+		t.Errorf("error = %v, want it to name the refusal", err)
+	}
+	if after := servedZones(server); after != before {
+		t.Errorf("served zones = %d after the refused apply, want %d — the authority must keep its last good state", after, before)
+	}
+}
+
+// TestFetchAcceptsAnEmptySnapshotOnAFreshAuthority is the other half: a new
+// deployment legitimately has nothing to serve and must not be wedged by a
+// guard meant for the collapse case.
+func TestFetchAcceptsAnEmptySnapshotOnAFreshAuthority(t *testing.T) {
+	t.Parallel()
+	metrics := telemetry.Disabled()
+	now := time.Date(2026, time.September, 2, 3, 4, 5, 0, time.UTC)
+	emptyRaw, _, err := Build(nil, now, false)
+	if err != nil {
+		t.Fatalf("Build empty: %v", err)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return testResponse(http.StatusOK, emptyRaw), nil
+	})}
+	cachePath := filepath.Join(t.TempDir(), "snapshot.json")
+	server := authoritative.New(nil, authoritative.DefaultMaxUDPSize, metrics)
+	status := NewStatus(time.Minute, metrics)
+	status.now = func() time.Time { return now }
+	consumer := NewConsumer(server, status, client, "http://control"+Path, "secret", cachePath, 1<<20, false, discardLogger(), metrics)
+	consumer.now = func() time.Time { return now }
+	if err := consumer.Fetch(context.Background()); err != nil {
+		t.Fatalf("Fetch rejected an empty snapshot on a fresh authority: %v", err)
+	}
+}
+
+// servedZones reports the zone count the authority is actually compiled to
+// answer from, which is the property that matters: a guard that keeps state in
+// the consumer while the server stops answering would be no guard at all.
+func servedZones(server *authoritative.Server) uint32 {
+	zones, _ := server.Counts()
+	return zones
+}

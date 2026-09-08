@@ -91,6 +91,7 @@ type Consumer struct {
 	metrics    *telemetry.Metrics
 	checksum   string
 	etag       string
+	zoneCount  int
 	compile    func([]zone.Zone) (*authoritative.CompiledSnapshot, error)
 	writeCache func(string, []byte) error
 }
@@ -293,6 +294,30 @@ func (c *Consumer) applyLocked(raw []byte, persist, fetched bool, source string)
 			return err
 		}
 	}
+	// Refuse a snapshot that empties an authority that is currently serving.
+	//
+	// Every other guard here protects against a snapshot that is malformed or
+	// stale. This one protects against a snapshot that is perfectly valid and
+	// catastrophically wrong: a control plane whose store came back empty — a
+	// PVC restored blank, a skipped restore step, a changed data path — serves
+	// {"zones":null} with a good checksum and a current timestamp. Applying it
+	// takes every delegated zone to REFUSED on every replica within one poll,
+	// and nothing notices: the apply is a success, the snapshot is fresh so the
+	// staleness alert stays quiet, and REFUSED is not SERVFAIL so that alert
+	// stays quiet too.
+	//
+	// The rest of this design is deliberately fail-static — a 24h staleness
+	// budget, a compiled snapshot held in memory across a control-plane outage.
+	// An empty document is the one input that throws good serving state away on
+	// the word of a control plane that is broken rather than merely unreachable,
+	// so it is treated as an apply error and the last good snapshot keeps
+	// serving. Going to zero from zero is fine; that is a new deployment.
+	if c.zoneCount > 0 && len(document.Zones) == 0 {
+		outcome = "collapse_error"
+		return fmt.Errorf(
+			"snapshot contains no zones while %d are being served; refusing to empty this authority",
+			c.zoneCount)
+	}
 	freshness := document.GeneratedAt
 	if fetched {
 		freshness = now
@@ -341,6 +366,7 @@ func (c *Consumer) applyLocked(raw []byte, persist, fetched bool, source string)
 		c.metrics.SnapshotCache(context.Background(), "write", "success", elapsed, len(raw))
 	}
 	c.server.ReplaceCompiled(compiled)
+	c.zoneCount = len(document.Zones)
 	c.checksum = document.Checksum
 	c.etag = checksumETag(document.Checksum)
 	c.status.markValid(document.GeneratedAt, freshness)

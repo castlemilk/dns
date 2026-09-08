@@ -121,8 +121,18 @@ cmp -s "${temporary_root}/platform.copy.db" "$fixture_platform" ||
   fail "archived platform store did not match the served bytes"
 pass "platform store is archived beside the snapshot"
 
+# A 404 on its own must now stop the run. The Gateway returns exactly the same
+# status when the platform-backup path is unrouted as the control plane returns
+# when there genuinely is no platform store, and trusting it meant the nightly
+# job reported success while archiving zones only.
+output_directory="${temporary_root}/platform-unrouted"
+if invoke "$output_directory" FAKE_PLATFORM_STATUS=404 >/dev/null 2>&1; then
+  fail "a 404 platform backup was accepted without PLATFORM_ALLOW_ABSENT"
+fi
+pass "an unexplained 404 platform backup fails the run"
+
 output_directory="${temporary_root}/platform-absent"
-output="$(invoke "$output_directory" FAKE_PLATFORM_STATUS=404)" ||
+output="$(invoke "$output_directory" FAKE_PLATFORM_STATUS=404 PLATFORM_ALLOW_ABSENT=true)" ||
   fail "a control plane without a platform store failed the backup"
 [[ "$output" == *"Platform store: absent"* ]] || fail "absent platform store was not reported"
 encrypted_archive="$(find "$output_directory" -maxdepth 1 -type f -name '*.tar.gz.gpg' -print -quit)"
@@ -137,7 +147,7 @@ exec 3<&-
 tar -xOf "$decrypted_archive" manifest.json | jq -e \
   '.platform_store.status == "absent" and (.platform_store | has("file_sha256") | not)' \
   >/dev/null || fail "absent platform store was not recorded in the manifest"
-pass "a 404 platform backup is recorded as absent, not a failure"
+pass "a 404 platform backup is recorded as absent when the operator says so"
 
 output_directory="${temporary_root}/platform-magic"
 expect_failure "a platform body without the bbolt magic retains nothing" "$output_directory" \

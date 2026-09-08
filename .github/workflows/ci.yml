@@ -319,6 +319,10 @@ jobs:
             --set 'tls.dnsNames[0]=snapshot.dns.example.com')"
           grep -Fq 'type: Exact' <<<"${rendered}"
           grep -Fq 'value: /internal/v1/snapshot' <<<"${rendered}"
+          # The platform backup rode on the same route and was never published,
+          # which the nightly job reported as "no platform store" rather than as
+          # a failure. Assert it so it cannot disappear silently again.
+          grep -Fq 'value: /internal/v1/platform-backup' <<<"${rendered}"
 
       - name: Render the platform store and every engine
         shell: bash

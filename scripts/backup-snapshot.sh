@@ -203,6 +203,17 @@ case "$platform_status" in
     platform_state=present
     ;;
   404)
+    # A 404 here is ambiguous and used to be trusted. The control plane returns
+    # it when this deployment genuinely runs no platform store; the Gateway
+    # returns an identical one when the path is simply not routed, which is what
+    # happened for months while the job reported success and archived zones
+    # only. Treating the two the same turns a broken backup into a green run,
+    # and the difference only shows up at restore time.
+    #
+    # Absent is therefore something the operator states, not something inferred.
+    if [[ "${PLATFORM_ALLOW_ABSENT:-false}" != true ]]; then
+      fail "platform backup endpoint returned HTTP 404. If this deployment truly has no platform store, set PLATFORM_ALLOW_ABSENT=true; otherwise the path is unrouted and the platform store is NOT being backed up"
+    fi
     rm -f -- "$raw_platform"
     ;;
   *)
