@@ -143,6 +143,65 @@ func TestDNSJourneyAnswersFromTheZoneItWasGiven(t *testing.T) {
 	}
 }
 
+// TestDNSJourneyServesADelegationAsAReferral checks the feature the delegation
+// guard must not have broken. Delegating a subdomain is legitimate and common;
+// what the store now refuses is doing it silently over records that would stop
+// resolving. A correctly delegated name must still produce a referral, and the
+// rest of the zone must keep answering.
+func TestDNSJourneyServesADelegationAsAReferral(t *testing.T) {
+	t.Parallel()
+
+	stack := startDNSStack(t, func(t *testing.T, store *zone.Store) string {
+		t.Helper()
+		created, err := store.Create(context.Background(), "referral.test")
+		if err != nil {
+			t.Fatalf("create zone: %v", err)
+		}
+		add := func(name string, recordType zone.RecordType, ttl uint32, value string) {
+			t.Helper()
+			record, err := zone.NormalizeRecord(created.Name, name, recordType, ttl, value)
+			if err != nil {
+				t.Fatalf("normalize %s: %v", name, err)
+			}
+			if _, err := store.CreateRecord(context.Background(), created.ID, record); err != nil {
+				t.Fatalf("create %s: %v", name, err)
+			}
+		}
+		add("sub", zone.TypeNS, 300, "ns1.elsewhere.test.")
+		add("keep", zone.TypeA, 300, "192.0.2.20")
+		return created.Name
+	})
+
+	// The delegated name answers with a referral, not data: no answer section,
+	// and the NS in the authority section.
+	question := new(dns.Msg)
+	question.SetQuestion("sub.referral.test.", dns.TypeA)
+	client := &dns.Client{Net: "udp", Timeout: 5 * time.Second}
+	response, _, err := client.Exchange(question, stack.addr)
+	if err != nil {
+		t.Fatalf("query delegated name: %v", err)
+	}
+	if len(response.Answer) != 0 {
+		t.Errorf("delegated name returned %d answers, want a referral with none", len(response.Answer))
+	}
+	if len(response.Ns) == 0 {
+		t.Fatal("delegated name returned no authority section; a referral must carry the NS")
+	}
+	referral, ok := response.Ns[0].(*dns.NS)
+	if !ok {
+		t.Fatalf("authority section holds %T, want *dns.NS", response.Ns[0])
+	}
+	if referral.Ns != "ns1.elsewhere.test." {
+		t.Errorf("referral names %s, want ns1.elsewhere.test.", referral.Ns)
+	}
+
+	// And the rest of the zone is unaffected by the cut.
+	answer := stack.ask(t, "keep.referral.test.", dns.TypeA, "udp")
+	if len(answer) != 1 {
+		t.Fatalf("got %d answers for the undelegated name, want 1", len(answer))
+	}
+}
+
 // TestDNSJourneySurvivesAnEmptyControlPlane is the availability case: a control
 // plane whose store came back blank publishes a valid, current, correctly
 // checksummed document containing no zones. Applying it would answer REFUSED for

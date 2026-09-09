@@ -963,3 +963,117 @@ func TestReopeningWithUnchangedNameserversLeavesSerialsAlone(t *testing.T) {
 		t.Errorf("Serial = %d after a no-op reopen, want it unchanged at %d", values[0].Serial, created.Serial)
 	}
 }
+
+// TestDelegationCannotSilentlyBlackholeRecords covers a configuration the store
+// used to accept while it took a working subdomain off the internet.
+//
+// An NS RRset at a non-apex name is a zone cut: the authority answers a referral
+// for that name and everything beneath it, so records already there stop being
+// served the moment the NS appears. That is correct DNS, and it was also silent
+// — the store took the NS, the API returned every record, and the console listed
+// the blackholed ones beside the delegation as though both were live.
+func TestDelegationCannotSilentlyBlackholeRecords(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := zone.Open(filepath.Join(t.TempDir(), "delegation.db"), []string{"ns1.provider.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	value, err := store.Create(ctx, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(t *testing.T, name string, recordType zone.RecordType, ttl uint32, data string) error {
+		t.Helper()
+		record := mustNormalizeRecord(t, value.Name, name, recordType, ttl, data)
+		_, err := store.CreateRecord(ctx, value.ID, record)
+		return err
+	}
+
+	// A working subdomain, and something beneath it.
+	if err := add(t, "shop", zone.TypeA, 300, "203.0.113.10"); err != nil {
+		t.Fatalf("seed shop: %v", err)
+	}
+	if err := add(t, "www.shop", zone.TypeA, 300, "203.0.113.11"); err != nil {
+		t.Fatalf("seed www.shop: %v", err)
+	}
+
+	// Following a third party's "delegate this subdomain to us" instructions.
+	err = add(t, "shop", zone.TypeNS, 300, "ns1.othervendor.com.")
+	if err == nil {
+		t.Fatal("delegating over live records was accepted; every record at and below shop would stop resolving")
+	}
+	if !strings.Contains(err.Error(), "would stop") {
+		t.Errorf("error = %v, want it to say what would stop resolving", err)
+	}
+
+	// The inverse: adding into an existing delegation is equally futile, because
+	// queries there are referred elsewhere and this record is never served.
+	if err := add(t, "cdn", zone.TypeNS, 300, "ns1.othervendor.com."); err != nil {
+		t.Fatalf("delegating an empty name should be allowed: %v", err)
+	}
+	err = add(t, "assets.cdn", zone.TypeA, 300, "203.0.113.12")
+	if err == nil {
+		t.Fatal("a record inside a delegation was accepted; it would never be served")
+	}
+	if !strings.Contains(err.Error(), "never be served") {
+		t.Errorf("error = %v, want it to say the record would never be served", err)
+	}
+}
+
+// TestDelegationStillWorksWhereItShould is the other half. Delegating is a
+// feature, not a hazard, and a guard that blocked the legitimate shapes would be
+// worse than the bug.
+func TestDelegationStillWorksWhereItShould(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, err := zone.Open(filepath.Join(t.TempDir(), "allowed.db"), []string{"ns1.provider.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	value, err := store.Create(ctx, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(t *testing.T, name string, recordType zone.RecordType, ttl uint32, data string) error {
+		t.Helper()
+		record := mustNormalizeRecord(t, value.Name, name, recordType, ttl, data)
+		_, err := store.CreateRecord(ctx, value.ID, record)
+		return err
+	}
+
+	// Delegating a name that holds nothing.
+	if err := add(t, "sub", zone.TypeNS, 300, "ns1.othervendor.com."); err != nil {
+		t.Fatalf("delegating an empty name: %v", err)
+	}
+	// A second nameserver for the same delegation.
+	if err := add(t, "sub", zone.TypeNS, 300, "ns2.othervendor.com."); err != nil {
+		t.Fatalf("second nameserver for a delegation: %v", err)
+	}
+	// An in-bailiwick delegation with its glue, which has to live inside the cut
+	// or the nameserver cannot be reached at all.
+	if err := add(t, "inhouse", zone.TypeNS, 300, "ns1.inhouse.example.com."); err != nil {
+		t.Fatalf("in-bailiwick delegation: %v", err)
+	}
+	if err := add(t, "ns1.inhouse", zone.TypeA, 300, "203.0.113.20"); err != nil {
+		t.Fatalf("glue for an in-bailiwick delegation must be allowed: %v", err)
+	}
+	// A sibling whose name merely shares a suffix is not inside the delegation.
+	if err := add(t, "workshop", zone.TypeA, 300, "203.0.113.21"); err != nil {
+		t.Fatalf("a name that only shares a suffix is not inside the delegation: %v", err)
+	}
+	// The apex NS RRset is the zone's own delegation and must stay untouched.
+	if err := add(t, "@", zone.TypeNS, 3600, "ns2.provider.example."); err != nil {
+		t.Fatalf("apex NS must remain addable: %v", err)
+	}
+}

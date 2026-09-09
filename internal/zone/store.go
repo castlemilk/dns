@@ -882,8 +882,98 @@ func managedRecords(value Zone, now time.Time) ([]Record, error) {
 	return records, nil
 }
 
+// validateDelegation refuses a change that would silently stop existing records
+// resolving, in either direction.
+//
+// An NS RRset at a non-apex name is a zone cut: the authority answers a referral
+// for that name and everything under it, so the A record already sitting there
+// and every record below it stop being served the instant the NS appears. That
+// is correct DNS and it is also a trap, because nothing said so — the store took
+// the NS, the API returned all of it, and the console listed the blackholed
+// records beside the delegation as though both were live. A customer following a
+// third party's "delegate this subdomain to us" instructions took their own
+// subdomain off the internet and had every screen tell them it was fine.
+//
+// Delegating is still allowed; it just cannot be done silently over records that
+// would disappear. Glue is exempt, because an in-bailiwick nameserver needs its
+// address inside the delegation to be reachable at all.
+func validateDelegation(zoneName string, records []Record, candidate Record, skipID string) error {
+	if candidate.Type == TypeNS && candidate.Name != "@" {
+		for _, existing := range records {
+			if existing.ID == skipID || !nameAtOrBelow(existing.Name, candidate.Name) {
+				continue
+			}
+			if existing.Type == TypeNS || existing.Type == TypeSOA {
+				continue
+			}
+			if isGlueFor(zoneName, existing, candidate) {
+				continue
+			}
+			return &ValidationError{
+				Field: "type",
+				Message: fmt.Sprintf(
+					"delegating %q would stop %q resolving: a non-apex NS makes this name a zone cut, so records at and below it are answered by the nameserver you delegate to, not here. Remove them first, or delegate a name that has none.",
+					candidate.Name, recordLabel(existing)),
+			}
+		}
+		return nil
+	}
+	if candidate.Type == TypeNS || candidate.Type == TypeSOA {
+		return nil
+	}
+	for _, existing := range records {
+		if existing.ID == skipID || existing.Type != TypeNS || existing.Name == "@" {
+			continue
+		}
+		if !nameAtOrBelow(candidate.Name, existing.Name) {
+			continue
+		}
+		if isGlueFor(zoneName, candidate, existing) {
+			continue
+		}
+		return &ValidationError{
+			Field: "name",
+			Message: fmt.Sprintf(
+				"%q is inside the delegation at %q, so this record would never be served: queries there are referred to the nameserver that name is delegated to. Remove the delegation first, or choose a name outside it.",
+				candidate.Name, existing.Name),
+		}
+	}
+	return nil
+}
+
+// nameAtOrBelow reports whether name is the delegated name itself or sits under
+// it. Both are relative to the zone, so "www.shop" is below "shop" and "workshop"
+// is not.
+func nameAtOrBelow(name, delegated string) bool {
+	if delegated == "@" {
+		return false
+	}
+	return name == delegated || strings.HasSuffix(name, "."+delegated)
+}
+
+// isGlueFor reports whether record is the address of a nameserver named by the
+// delegation, which is the one thing that legitimately lives inside a zone cut.
+func isGlueFor(zoneName string, record Record, delegation Record) bool {
+	if record.Type != TypeA && record.Type != TypeAAAA {
+		return false
+	}
+	owner := dns.Fqdn(zoneName)
+	if record.Name != "@" {
+		owner = dns.Fqdn(record.Name + "." + zoneName)
+	}
+	return strings.EqualFold(owner, dns.Fqdn(delegation.Value))
+}
+
+// recordLabel names a record for an error message without echoing its value.
+func recordLabel(record Record) string {
+	return record.Name + " " + string(record.Type)
+}
+
 func validateRRSet(zoneName string, records []Record, candidate Record, skipID string) error {
 	recordCount := 1
+	if err := validateDelegation(zoneName, records, candidate, skipID); err != nil {
+		return err
+	}
 	candidateRR, err := Compile(zoneName, candidate)
 	if err != nil {
 		return fmt.Errorf("compile candidate record: %w", err)
