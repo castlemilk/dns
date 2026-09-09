@@ -40,6 +40,20 @@ test:
 test-race:
 	$(GO) test -race ./...
 
+# The end-to-end suites: the real components over real sockets, no engine URLs
+# and no cluster required, so this runs anywhere `make test` does. They carry no
+# build tag either, so `make test` already includes them — this target exists to
+# run just them while working on the paths they cover.
+#
+# TestDNSJourney*  a record from the bbolt store, through the real snapshot feed
+#                  over HTTP, into a real authority answering on a real UDP and
+#                  TCP socket. It exists because every layer once agreed with the
+#                  others while all of them disagreed with what the customer
+#                  typed, which only a test spanning them can catch.
+# TestEndToEnd*    the mail journey: SMTP in, POP3 out, real queue, real relay.
+test-e2e:
+	$(GO) test -race -count=1 -run 'TestDNSJourney|TestEndToEnd' ./internal/app/... ./internal/maild/...
+
 # Integration tests carry no build tag: they compile under `go test ./...`,
 # `go vet` and golangci-lint, and skip themselves when their engine URL is
 # unset. These targets set the URL, so they actually run.
