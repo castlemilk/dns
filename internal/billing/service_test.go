@@ -1124,3 +1124,87 @@ func fakePost(t *testing.T, url string) int {
 	defer closeBody(t, response)
 	return response.StatusCode
 }
+
+// TestPayingTwiceIsRefusedRatherThanSold covers the double charge.
+//
+// reuseOpenCheckout only short-circuited while the stored session was still
+// "open". A customer who paid and clicked Subscribe again before the webhook
+// landed — the row still says PENDING — fell straight through to a second
+// hosted checkout for a domain they had just paid for. Completing it creates a
+// second Stripe subscription: A$10 a month twice for one domain, with the row
+// and the reconciler tracking only one of them, so nothing downstream notices.
+func TestPayingTwiceIsRefusedRatherThanSold(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, harnessOptions{})
+	ctx := context.Background()
+
+	first, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+
+	// The customer pays. The webhook has not been delivered, so the row is
+	// still PENDING — which is the whole point of the race.
+	h.completeCheckoutInBrowser(first.Msg.GetUrl())
+	if got := h.subscription("z1").State; got != StatePending {
+		t.Fatalf("row state = %q before the delivery, want %q", got, StatePending)
+	}
+
+	second, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err == nil {
+		t.Fatalf("a second checkout was opened for a domain already paid for: %s", second.Msg.GetUrl())
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("code = %s, want FailedPrecondition", connect.CodeOf(err))
+	}
+
+	// And only one checkout was ever opened against Stripe, so there is only
+	// one thing the customer can be charged for.
+	opened := 0
+	for _, request := range h.fake.Requests() {
+		if request.Method == http.MethodPost && request.Path == "/v1/checkout/sessions" {
+			opened++
+		}
+	}
+	if opened != 1 {
+		t.Errorf("%d checkout sessions were created for one domain, want 1", opened)
+	}
+}
+
+// TestCheckoutCanBeReopenedAfterTheKeyWasUsed covers the idempotency key that
+// never advanced.
+//
+// nextAttempt returned value+1 without ever storing the increment, so every
+// call produced the same key while the parameters underneath it moved with the
+// clock. Stripe answers that with a 400 idempotency_error, which the console
+// renders as "the billing provider didn't answer, try again" — advice that
+// could not work for 24 hours.
+func TestCheckoutCanBeReopenedAfterTheKeyWasUsed(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, harnessOptions{})
+	ctx := context.Background()
+
+	first, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err != nil {
+		t.Fatalf("first checkout: %v", err)
+	}
+
+	// The customer wanders off and the session expires.
+	h.clock.Advance(checkoutWindow + time.Minute)
+
+	second, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err != nil {
+		t.Fatalf("reopening a checkout after the first expired: %v", err)
+	}
+	if second.Msg.GetSessionId() == first.Msg.GetSessionId() {
+		t.Error("the second checkout reused the first session; the attempt counter did not advance")
+	}
+}

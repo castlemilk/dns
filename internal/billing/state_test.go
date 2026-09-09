@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
 	billingv1 "github.com/castlemilk/dns/gen/go/billing/v1"
 	"github.com/castlemilk/dns/internal/billing/provider"
 	"github.com/castlemilk/dns/internal/platform"
@@ -438,5 +440,97 @@ func TestHumanStateReadsAsASentence(t *testing.T) {
 		if got := humanState(testCase.doc); got != testCase.want {
 			t.Errorf("humanState(%q) = %q, want %q", testCase.doc.State, got, testCase.want)
 		}
+	}
+}
+
+// TestADeadSubscriptionCannotCancelALiveOne covers an event binding to the zone
+// instead of to the subscription the row is actually tracking.
+//
+// applySubscription resolved the zone from the event's metadata and then
+// overwrote the row from the event, with no check that the event's subscription
+// is the one the row holds. A delete for a superseded subscription therefore
+// rewrote a live, paid row — and the delete path deliberately bypasses the
+// staleness guard, so even an event older than everything already applied won.
+//
+// Stripe then keeps charging A$10 a month on the real subscription while the
+// console shows the domain CANCELED, and the portal button points at the dead
+// id, so the operator cannot stop the billing they can see.
+func TestADeadSubscriptionCannotCancelALiveOne(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, harnessOptions{})
+	ctx := context.Background()
+
+	// Get the zone to a real, paid subscription.
+	created, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err != nil {
+		t.Fatalf("CreateCheckoutSession: %v", err)
+	}
+	h.completeCheckoutInBrowser(created.Msg.GetUrl())
+	h.drain()
+
+	live := h.subscription("z1")
+	if live.State != StateActive || live.SubscriptionID == "" {
+		t.Fatalf("row is not active before the test: %#v", live)
+	}
+
+	// A delete arrives for a DIFFERENT subscription that happens to carry the
+	// same zone in its metadata — a subscription this row superseded.
+	superseded := Subscription{
+		ID:         live.SubscriptionID + "-old",
+		CustomerID: live.CustomerID,
+		Status:     "canceled",
+		Metadata:   map[string]string{"zone_id": "z1"},
+	}
+	outcome, err := h.service.applySubscription(ctx,
+		Event{ID: "evt_stale_delete", Type: provider.EventSubscriptionDeleted, Created: h.clock.Now()},
+		superseded)
+	if err != nil {
+		t.Fatalf("applySubscription: %v", err)
+	}
+	if outcome != outcomeIgnored {
+		t.Errorf("outcome = %q, want %q — an event for another subscription must not move this row", outcome, outcomeIgnored)
+	}
+
+	after := h.subscription("z1")
+	if after.State != StateActive {
+		t.Errorf("state = %q after a delete for a superseded subscription, want ACTIVE — Stripe is still charging for it", after.State)
+	}
+	if after.SubscriptionID != live.SubscriptionID {
+		t.Errorf("SubscriptionID = %q, want %q — the portal button would now aim at a dead subscription",
+			after.SubscriptionID, live.SubscriptionID)
+	}
+}
+
+// TestTheRealSubscriptionCanStillBeCanceled is the other half: the guard must
+// not stop a genuine cancellation of the subscription the row tracks.
+func TestTheRealSubscriptionCanStillBeCanceled(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, harnessOptions{})
+	ctx := context.Background()
+
+	created, err := h.service.CreateCheckoutSession(ctx, connect.NewRequest(&billingv1.CreateCheckoutSessionRequest{
+		ZoneId: "z1", ReturnPath: "/billing",
+	}))
+	if err != nil {
+		t.Fatalf("CreateCheckoutSession: %v", err)
+	}
+	h.completeCheckoutInBrowser(created.Msg.GetUrl())
+	h.drain()
+	live := h.subscription("z1")
+
+	if _, err := h.service.applySubscription(ctx,
+		Event{ID: "evt_real_delete", Type: provider.EventSubscriptionDeleted, Created: h.clock.Now()},
+		Subscription{
+			ID:         live.SubscriptionID,
+			CustomerID: live.CustomerID,
+			Status:     "canceled",
+			Metadata:   map[string]string{"zone_id": "z1"},
+		}); err != nil {
+		t.Fatalf("applySubscription: %v", err)
+	}
+	if got := h.subscription("z1").State; got != StateCanceled {
+		t.Errorf("state = %q after cancelling the tracked subscription, want CANCELED", got)
 	}
 }

@@ -297,6 +297,25 @@ func (s *Service) applySubscription(ctx context.Context, event Event, item Subsc
 		return "", err
 	}
 	deleted := event.Type == provider.EventSubscriptionDeleted
+	// An event names a subscription; the row tracks one. They have to be the
+	// same subscription before the event is allowed to move the row.
+	//
+	// Without this the event bound to the zone alone, so a delete for a
+	// superseded subscription rewrote a live, paid row: Stripe kept charging
+	// A$10 a month on the real subscription while the console showed the domain
+	// CANCELED, and the portal button pointed at the dead id, so the operator
+	// could not stop the billing they could see. The delete path made it worse
+	// by design — cancellation deliberately bypasses the staleness guard below,
+	// so an event older than everything already applied still won.
+	//
+	// A row that tracks nothing yet, or one whose subscription has already
+	// ended, may legitimately be claimed by a new subscription: that is a
+	// customer resubscribing. A row pointing at a live subscription may not.
+	if doc.SubscriptionID != "" && item.ID != "" && item.ID != doc.SubscriptionID &&
+		doc.State != StateCanceled && doc.State != StateUnbilled {
+		s.recordIgnored(ctx, event, "subscription")
+		return outcomeIgnored, nil
+	}
 	// A cancellation is terminal, so it wins even when it arrives out of
 	// order: nothing that happened before it can revive the subscription.
 	if !deleted && stale(doc, familySubscription, event.Created) {

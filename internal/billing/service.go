@@ -562,7 +562,32 @@ func (s *Service) reuseOpenCheckout(
 	started := s.deps.Now()
 	session, err := s.provider.GetCheckout(ctx, doc.CheckoutSessionID)
 	s.observe(ctx, "get_checkout", started, err)
-	if err != nil || session.Status != "open" || session.URL == "" {
+	if err != nil {
+		return nil, false, nil
+	}
+	// A session the customer already completed must never fall through to
+	// opening another one. The row still says StatePending because the webhook
+	// has not been applied yet, so this is the ordinary case of someone paying
+	// and clicking Subscribe again before the delivery lands — and it used to
+	// hand them a second hosted checkout for a domain they had just paid for.
+	// Completing that one creates a second Stripe subscription: A$10 a month
+	// charged twice for one domain, with the row and the reconciler tracking
+	// only one of them, so nothing downstream notices.
+	//
+	// Settle the row from the session instead, and tell them they are already
+	// subscribed rather than selling it to them again.
+	if session.Status == "complete" {
+		// Refuse, and deliberately do not settle the row here. completeCheckout
+		// takes this zone's row lock, which CreateCheckoutSession is already
+		// holding, so calling it would deadlock the checkout path — the first
+		// version of this fix did exactly that and hung the test that drives it.
+		// Settling is the webhook's job, or ConfirmCheckout's when the customer
+		// lands on the success page; all this has to do is not sell the domain
+		// twice.
+		return nil, false, connect.NewError(connect.CodeFailedPrecondition,
+			fmt.Errorf("%s has already been paid for — its subscription will appear here once the payment settles", doc.ZoneName))
+	}
+	if session.Status != "open" || session.URL == "" {
 		return nil, false, nil
 	}
 	return &billingv1.CreateCheckoutSessionResponse{
@@ -605,13 +630,31 @@ func (s *Service) ensureCustomer(ctx context.Context) (string, error) {
 // nextAttempt is the counter in the idempotency key. It is seeded from the
 // session this zone last opened, so a retry after a crash reuses the key and
 // Stripe replays the session it already created instead of opening a second.
+// nextAttempt hands out the attempt number that distinguishes one checkout from
+// the next in the idempotency key.
+//
+// It has to store what it returns. It used to read the counter, return value+1
+// and never write the increment back, so every call produced the same number and
+// therefore the same idempotency key — while the parameters underneath it moved,
+// because the session expiry is derived from the clock. Stripe answers that with
+// a 400 idempotency_error, which providerError maps to "The billing provider
+// didn't answer. Try again in a moment." So a customer whose checkout expired
+// clicked Subscribe, was told to retry, and could not succeed for 24 hours,
+// while the operator saw an unreachable-provider error against a provider that
+// was answering perfectly.
 func (s *Service) nextAttempt(ctx context.Context, doc platform.SubscriptionDoc) int {
 	s.mu.Lock()
 	value, ok := s.attempts[doc.ZoneID]
-	s.mu.Unlock()
 	if ok {
-		return value + 1
+		next := value + 1
+		s.attempts[doc.ZoneID] = next
+		s.mu.Unlock()
+		return next
 	}
+	s.mu.Unlock()
+
+	// Nothing in memory: seed from the last checkout this zone persisted, so a
+	// restarted control plane does not reuse a key the previous process burned.
 	seed := 0
 	if doc.CheckoutSessionID != "" {
 		if stored, err := s.deps.Store.GetCheckout(ctx, doc.CheckoutSessionID); err == nil {
@@ -619,9 +662,15 @@ func (s *Service) nextAttempt(ctx context.Context, doc platform.SubscriptionDoc)
 		}
 	}
 	s.mu.Lock()
-	s.attempts[doc.ZoneID] = seed
+	// Re-check: another request for this zone may have seeded while the store
+	// was being read, and the larger number is the one that has not been used.
+	if existing, raced := s.attempts[doc.ZoneID]; raced && existing >= seed {
+		seed = existing
+	}
+	next := seed + 1
+	s.attempts[doc.ZoneID] = next
 	s.mu.Unlock()
-	return seed + 1
+	return next
 }
 
 func (s *Service) bumpAttempt(zoneID string) int {
