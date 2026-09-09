@@ -250,7 +250,7 @@ func (h *Handler) CreateRecord(ctx context.Context, request *connect.Request[dns
 	// changes what that engine's record answers. Update and delete already
 	// refuse an engine-owned record; refuse the sibling here too, and name the
 	// engine and the way out exactly as they do.
-	if source, taken := zone.EngineOwnedRRSet(stored.Records, candidate); taken {
+	if source, taken := zone.EngineOwnedRRSet(stored.Records, candidate, ""); taken {
 		return nil, engineOwnedSetError(source, candidate)
 	}
 	updated, err := h.store.CreateRecord(ctx, stored.ID, candidate)
@@ -299,6 +299,14 @@ func (h *Handler) UpdateRecord(ctx context.Context, request *connect.Request[dns
 	previous = current
 	if current.Source != zone.SourceUser {
 		return nil, engineOwnedError(current.Source)
+	}
+	// The record being edited is allowed to be user-owned and still land in an
+	// RRset an engine owns — an edit can change a record's name or type, which
+	// is how the same change the Add dialog refuses used to succeed from the
+	// Edit dialog. Skipping this record's own ID is what makes the check about
+	// where it is going rather than where it is.
+	if source, taken := zone.EngineOwnedRRSet(stored.Records, candidate, recordID); taken {
+		return nil, engineOwnedSetError(source, candidate)
 	}
 
 	updated, err := h.store.UpdateRecord(ctx, stored.ID, recordID, candidate)
@@ -736,6 +744,9 @@ func (h *Handler) publicError(err error) error {
 		return connect.NewError(connect.CodeAlreadyExists, errors.New("zone or record already exists"))
 	case errors.Is(err, zone.ErrManagedRecord):
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("managed SOA and NS records cannot be changed"))
+	case errors.Is(err, zone.ErrEngineOwnedRRSet):
+		return connect.NewError(connect.CodeFailedPrecondition,
+			errors.New("an engine already answers that name and type; detach the site or unbind email to take it over"))
 	case errors.Is(err, zone.ErrEngineOwned):
 		return engineOwnedError("")
 	case errors.Is(err, context.Canceled):

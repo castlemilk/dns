@@ -27,8 +27,13 @@ var (
 	// ErrEngineOwned is returned by UpdateRecord and DeleteRecord for a record
 	// whose Source is not the user source. Engine-owned records are rewritten
 	// by their reconciler within one pass, so a silent edit would not survive.
-	ErrEngineOwned    = errors.New("engine-owned record")
-	errDryRunRollback = errors.New("rollback successful import dry-run")
+	ErrEngineOwned = errors.New("engine-owned record")
+	// ErrEngineOwnedRRSet is returned when the record itself belongs to the
+	// operator but the RRset its name and type land in is answered by an engine.
+	// It is distinct from ErrEngineOwned because the remedy differs: nothing is
+	// wrong with the record, it is the destination that is taken.
+	ErrEngineOwnedRRSet = errors.New("engine-owned RRset")
+	errDryRunRollback   = errors.New("rollback successful import dry-run")
 )
 
 // Record-set operation kinds accepted by ApplyRecordSet.
@@ -554,6 +559,17 @@ func (s *Store) UpdateRecord(ctx context.Context, zoneID, recordID string, recor
 		if current.Source != SourceUser {
 			return fmt.Errorf("record %q: %w", recordID, ErrEngineOwned)
 		}
+		// The handler refuses this too, with a friendlier message. It is
+		// repeated here because the invariant belongs to the store: the comment
+		// on EngineOwnedRRSet says any path that lets an operator write a record
+		// must consult it, and for a long time UpdateRecord was a path that did
+		// not. Editing a record checked the provenance of the record being
+		// changed and never the provenance of the RRset its new name and type
+		// landed in, so the same edit the Add dialog refused went through from
+		// the Edit dialog.
+		if source, taken := EngineOwnedRRSet(value.Records, record, recordID); taken {
+			return fmt.Errorf("record %q joins the %s RRset at %q: %w", recordID, source, record.Name, ErrEngineOwnedRRSet)
+		}
 		if err := validateRRSet(value.Name, value.Records, record, recordID); err != nil {
 			return err
 		}
@@ -1023,8 +1039,11 @@ func validateRRSet(zoneName string, records []Record, candidate Record, skipID s
 // enforced inside CreateRecord because the answer has to be read under the
 // control handler's write lock, which is what makes the check race-free
 // against a concurrent engine apply.
-func EngineOwnedRRSet(records []Record, candidate Record) (string, bool) {
+func EngineOwnedRRSet(records []Record, candidate Record, skipID string) (string, bool) {
 	for _, existing := range records {
+		if existing.ID == skipID {
+			continue
+		}
 		if existing.Managed || existing.Name != candidate.Name || existing.Type != candidate.Type {
 			continue
 		}

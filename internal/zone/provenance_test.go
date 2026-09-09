@@ -554,7 +554,7 @@ func TestEngineOwnedRRSetNamesTheEngineThatAnswers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			source, taken := zone.EngineOwnedRRSet(updated.Records, tt.candidate)
+			source, taken := zone.EngineOwnedRRSet(updated.Records, tt.candidate, "")
 			if taken != tt.wantTaken || (tt.wantTaken && source != tt.wantSource) {
 				t.Errorf("EngineOwnedRRSet = %q/%t, want %q/%t", source, taken, tt.wantSource, tt.wantTaken)
 			}

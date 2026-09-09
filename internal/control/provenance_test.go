@@ -828,3 +828,72 @@ func TestCreateRecordIsRefusedInsideAnEngineRRSet(t *testing.T) {
 		t.Errorf("CreateRecord(unrelated name) = %v, want it accepted", err)
 	}
 }
+
+// TestEditingCannotJoinAnEngineOwnedRRSet closes the door the Add dialog already
+// held shut.
+//
+// CreateRecord refused a record that would join an RRset an engine answers.
+// UpdateRecord checked only the provenance of the record being edited, never the
+// provenance of the RRset its new name and type landed in — so the same change
+// the console refused in Add succeeded silently from Edit. The apex A RRset then
+// held one address the hosting engine serves and one it does not, and roughly
+// half of all resolver answers sent visitors to a dead IP. The reconciler will
+// not clear it either: a user record in the engine's way is a Conflict that only
+// an explicit replace_conflicting_records call removes.
+func TestEditingCannotJoinAnEngineOwnedRRSet(t *testing.T) {
+	t.Parallel()
+
+	handler, _, _, _ := newEngineHandler(t)
+	ctx := context.Background()
+	zoneID := createZone(t, handler, "acme.dev")
+
+	// The hosting engine publishes the apex A it answers for.
+	if _, err := handler.ApplyRecordSet(ctx, zoneID, gatewayOps(t, "acme.dev"), activity.ActorHostingEngine, "site-1"); err != nil {
+		t.Fatalf("ApplyRecordSet: %v", err)
+	}
+
+	// Adding a second apex A is refused, and always was.
+	_, err := handler.CreateRecord(ctx, connect.NewRequest(&dnsv1.CreateRecordRequest{
+		ZoneId: zoneID, Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Ttl: 300, Value: "203.0.113.9",
+	}))
+	if err == nil {
+		t.Fatal("CreateRecord joined the engine's apex A RRset")
+	}
+
+	// A record of the operator's own, somewhere harmless.
+	created, err := handler.CreateRecord(ctx, connect.NewRequest(&dnsv1.CreateRecordRequest{
+		ZoneId: zoneID, Name: "staging", Type: dnsv1.RecordType_RECORD_TYPE_A, Ttl: 300, Value: "203.0.113.9",
+	}))
+	if err != nil {
+		t.Fatalf("CreateRecord for an unrelated name: %v", err)
+	}
+	var recordID string
+	for _, record := range created.Msg.GetZone().GetRecords() {
+		if record.GetName() == "staging" {
+			recordID = record.GetId()
+		}
+	}
+	if recordID == "" {
+		t.Fatal("could not find the record just created")
+	}
+
+	// Editing it onto the apex is the same change by another route, and must be
+	// refused the same way.
+	_, err = handler.UpdateRecord(ctx, connect.NewRequest(&dnsv1.UpdateRecordRequest{
+		ZoneId: zoneID, RecordId: recordID, Name: "@", Type: dnsv1.RecordType_RECORD_TYPE_A, Ttl: 300, Value: "203.0.113.9",
+	}))
+	if err == nil {
+		t.Fatal("UpdateRecord moved a record into the engine's apex A RRset; half of all answers would send visitors to an address the engine does not serve")
+	}
+	if !strings.Contains(err.Error(), "Website") && !strings.Contains(err.Error(), "hosting") {
+		t.Errorf("error = %v, want it to name the engine that answers there", err)
+	}
+
+	// Editing the record within its own name is still allowed: the guard is
+	// about where a record is going, not that it is being touched at all.
+	if _, err := handler.UpdateRecord(ctx, connect.NewRequest(&dnsv1.UpdateRecordRequest{
+		ZoneId: zoneID, RecordId: recordID, Name: "staging", Type: dnsv1.RecordType_RECORD_TYPE_A, Ttl: 600, Value: "203.0.113.40",
+	})); err != nil {
+		t.Fatalf("editing an operator's own record must still work: %v", err)
+	}
+}
