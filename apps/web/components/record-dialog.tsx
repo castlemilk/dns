@@ -156,9 +156,13 @@ export function RecordDialog({
   const [submitting, setSubmitting] = useState(false);
   const guidance = valueGuidance[type as (typeof recordTypes)[number]];
 
-  // The server stores TXT with strconv.Quote, and miekg then serves "\n" as the letter
-  // "n" and "\x41" as "x41": a control character silently publishes something else.
-  // Reject it here, whatever the caller's own `validate` does.
+  // A control character in a TXT value is almost always a paste accident — a key
+  // that wrapped across lines in another provider's UI carries the newline or tab
+  // with it. The server stores those faithfully now (it writes DNS presentation
+  // escapes, so a tab is published as a tab), which means accepting one here would
+  // publish a record that is subtly not what the customer meant and gives no
+  // symptom until a verifier disagrees. Saying so at the point of paste is kinder
+  // than storing it correctly and wrong.
   const printable: RecordValidation | undefined =
     type === RecordType.TXT && value.trim() && !isPrintableTxt(value)
       ? {

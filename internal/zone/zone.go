@@ -251,6 +251,41 @@ func normalizeOwner(zoneName, name string) (string, error) {
 	return name, nil
 }
 
+// QuoteCharacterString renders a value as a DNS <character-string> in
+// presentation format: RFC 1035 §5.1 escapes, not Go's.
+//
+// This exists because strconv.Quote looks close enough to be wrong. Go writes a
+// tab as \t and a byte as \xNN; a zone-file parser reads \X as the literal
+// byte X, so \t is served as the letter "t" and the tab is gone. A customer who
+// pastes a DKIM key that wrapped across lines in another provider's UI gets a
+// record accepted without complaint, stored with different bytes, and returned
+// by the API exactly as stored — so the console, the API and the wire all agree
+// with each other and disagree only with what was supplied. Their outbound mail
+// then fails signature verification with nothing anywhere reporting an error.
+//
+// Bytes outside printable ASCII become \DDD decimal escapes, which is what the
+// parser understands, and quotes and backslashes are escaped so the string
+// cannot be terminated early.
+func QuoteCharacterString(value string) string {
+	var result strings.Builder
+	result.Grow(len(value) + 2)
+	result.WriteByte('"')
+	for index := 0; index < len(value); index++ {
+		char := value[index]
+		switch {
+		case char == '"' || char == '\\':
+			result.WriteByte('\\')
+			result.WriteByte(char)
+		case char < 0x20 || char > 0x7e:
+			_, _ = fmt.Fprintf(&result, "\\%03d", char)
+		default:
+			result.WriteByte(char)
+		}
+	}
+	result.WriteByte('"')
+	return result.String()
+}
+
 func normalizeValue(zoneName string, record *Record) error {
 	switch record.Type {
 	case TypeA:
@@ -301,7 +336,7 @@ func normalizeValue(zoneName string, record *Record) error {
 		record.Value = strings.Join(append(parts[:3], target), " ")
 	case TypeTXT:
 		if !strings.HasPrefix(record.Value, "\"") {
-			record.Value = strconv.Quote(record.Value)
+			record.Value = QuoteCharacterString(record.Value)
 		}
 	case TypeCAA:
 		parts := strings.Fields(record.Value)
@@ -314,7 +349,7 @@ func normalizeValue(zoneName string, record *Record) error {
 		}
 		value := strings.Join(parts[2:], " ")
 		if !strings.HasPrefix(value, "\"") {
-			value = strconv.Quote(value)
+			value = QuoteCharacterString(value)
 		}
 		// RFC 8659 §4.1 makes the property tag case-insensitive, so `ISSUE` and
 		// `issue` are one record. Storing them as typed would put two identical

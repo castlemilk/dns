@@ -115,7 +115,7 @@ func supportedRecord(rr dns.RR) (zone.RecordType, string, error) {
 	case *dns.TXT:
 		parts := make([]string, 0, len(value.Txt))
 		for _, text := range value.Txt {
-			parts = append(parts, quoteCharacterString(text))
+			parts = append(parts, zone.QuoteCharacterString(text))
 		}
 		return zone.TypeTXT, strings.Join(parts, " "), nil
 	case *dns.NS:
@@ -123,7 +123,7 @@ func supportedRecord(rr dns.RR) (zone.RecordType, string, error) {
 	case *dns.SRV:
 		return zone.TypeSRV, fmt.Sprintf("%d %d %d %s", value.Priority, value.Weight, value.Port, value.Target), nil
 	case *dns.CAA:
-		return zone.TypeCAA, fmt.Sprintf("%d %s %s", value.Flag, value.Tag, quoteCharacterString(value.Value)), nil
+		return zone.TypeCAA, fmt.Sprintf("%d %s %s", value.Flag, value.Tag, zone.QuoteCharacterString(value.Value)), nil
 	default:
 		recordType := dns.TypeToString[rr.Header().Rrtype]
 		if recordType == "" {
@@ -131,26 +131,6 @@ func supportedRecord(rr dns.RR) (zone.RecordType, string, error) {
 		}
 		return "", "", fmt.Errorf("record %q uses unsupported type %s", rr.Header().Name, recordType)
 	}
-}
-
-func quoteCharacterString(value string) string {
-	var result strings.Builder
-	result.Grow(len(value) + 2)
-	result.WriteByte('"')
-	for index := 0; index < len(value); index++ {
-		char := value[index]
-		switch {
-		case char == '"' || char == '\\':
-			result.WriteByte('\\')
-			result.WriteByte(char)
-		case char < 0x20 || char > 0x7e:
-			_, _ = fmt.Fprintf(&result, "\\%03d", char)
-		default:
-			result.WriteByte(char)
-		}
-	}
-	result.WriteByte('"')
-	return result.String()
 }
 
 func compareRecords(a, b zone.Record) int {

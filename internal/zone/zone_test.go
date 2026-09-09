@@ -1,11 +1,13 @@
 package zone_test
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/castlemilk/dns/internal/zone"
+	"github.com/miekg/dns"
 )
 
 func TestNormalizeName(t *testing.T) {
@@ -301,4 +303,125 @@ func TestNormalizeRecordStoresWhatIsServed(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCharacterStringsSurviveTheWireVerbatim pins the property that a value the
+// customer supplies is the value their resolvers receive.
+//
+// TXT and CAA values were quoted with strconv.Quote, which writes Go escapes. A
+// zone-file parser reads \X as the literal byte X, so a tab stored as \t went
+// on the wire as the letter "t". A pasted DKIM key that had wrapped across lines
+// in another provider's UI was accepted without complaint and published with
+// different bytes — the console, the API and the wire all agreed with each other
+// and disagreed only with what was typed, so the domain's outbound mail failed
+// signature verification with nothing reporting an error.
+//
+// The comparison is deliberately made on packed wire bytes. miekg re-escapes
+// non-printable bytes when it renders TXT.Txt, so comparing against that field
+// cannot tell a real tab from the four characters backslash-zero-zero-nine.
+func TestCharacterStringsSurviveTheWireVerbatim(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "dkim key that wrapped across lines", value: "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC1\tvJ8m2Q=="},
+		{name: "embedded newline", value: "first\nsecond"},
+		{name: "carriage return", value: "value\rmore"},
+		{name: "backslash the customer meant literally", value: `C:\path\to\thing`},
+		{name: "embedded quote", value: `say "hello" twice`},
+		{name: "non-ascii", value: "café"},
+		{name: "plain spf", value: "v=spf1 include:_spf.example.com ~all"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			record, err := zone.NormalizeRecord("example.com", "sel._domainkey", zone.TypeTXT, 300, test.value)
+			if err != nil {
+				t.Fatalf("NormalizeRecord: %v", err)
+			}
+			got, err := wireTXT(t, "sel._domainkey.example.com. 300 IN TXT "+record.Value)
+			if err != nil {
+				t.Fatalf("stored value does not parse as a zone-file record: %v (stored %s)", err, record.Value)
+			}
+			if !bytes.Equal(got, []byte(test.value)) {
+				t.Errorf("value changed on the way to the wire:\n  supplied: %q\n  served:   %q\n  stored:   %s",
+					test.value, string(got), record.Value)
+			}
+		})
+	}
+}
+
+// TestCAAValuesSurviveTheWireVerbatim covers the same quoting on the other type
+// that uses it. A mangled CAA value silently changes which authority is allowed
+// to issue certificates for the domain.
+func TestCAAValuesSurviveTheWireVerbatim(t *testing.T) {
+	t.Parallel()
+
+	record, err := zone.NormalizeRecord("example.com", "@", zone.TypeCAA, 300, "0 issue letsencrypt.org")
+	if err != nil {
+		t.Fatalf("NormalizeRecord: %v", err)
+	}
+	rr, err := dns.NewRR("example.com. 300 IN CAA " + record.Value)
+	if err != nil {
+		t.Fatalf("stored CAA does not parse: %v (stored %s)", err, record.Value)
+	}
+	caa, ok := rr.(*dns.CAA)
+	if !ok {
+		t.Fatalf("parsed %T, want *dns.CAA", rr)
+	}
+	if caa.Value != "letsencrypt.org" {
+		t.Errorf("CAA value = %q, want letsencrypt.org", caa.Value)
+	}
+	if caa.Tag != "issue" {
+		t.Errorf("CAA tag = %q, want issue", caa.Tag)
+	}
+}
+
+// wireTXT returns the exact bytes a resolver receives for a TXT record: the
+// concatenated character-strings out of the packed RDATA.
+//
+// The expected value is never routed through miekg. Its TXT.Txt field holds
+// presentation-escaped text, not raw bytes, so handing it a string containing a
+// backslash silently drops the backslash — building the reference that way would
+// have asserted the wrong thing in exactly the cases this test exists for.
+func wireTXT(t *testing.T, line string) ([]byte, error) {
+	t.Helper()
+	rr, err := dns.NewRR(line)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 4096)
+	n, err := dns.PackRR(rr, buf, 0, nil, false)
+	if err != nil {
+		t.Fatalf("PackRR: %v", err)
+	}
+	wire := buf[:n]
+
+	// Walk the length-prefixed labels to the root byte, then step over
+	// type, class and TTL to reach RDLENGTH.
+	offset := 0
+	for offset < len(wire) && wire[offset] != 0 {
+		offset += int(wire[offset]) + 1
+	}
+	offset++
+	offset += 2 + 2 + 4
+	if offset+2 > len(wire) {
+		t.Fatalf("packed RR is too short to hold RDLENGTH: %v", wire)
+	}
+	rdLength := int(wire[offset])<<8 | int(wire[offset+1])
+	offset += 2
+	rdata := wire[offset : offset+rdLength]
+
+	// TXT RDATA is a sequence of character-strings, each length-prefixed.
+	var value []byte
+	for cursor := 0; cursor < len(rdata); {
+		size := int(rdata[cursor])
+		cursor++
+		value = append(value, rdata[cursor:cursor+size]...)
+		cursor += size
+	}
+	return value, nil
 }
